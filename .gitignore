@@ -1,0 +1,9 @@
+*.exe
+*.class
+*.bluej
+*.jar
+*.launch
+.project
+.classpath
+bin/
+doc/
