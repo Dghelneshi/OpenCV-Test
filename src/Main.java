@@ -52,72 +52,99 @@ public class Main {
         CascadeClassifier faceCascade = new CascadeClassifier("data/haarcascades/haarcascade_frontalface_alt.xml");
         CascadeClassifier eyeCascade = new CascadeClassifier("data/haarcascades/haarcascade_eye.xml");
         
-        Mat grayImage = new Mat();
-        MatOfRect faces = new MatOfRect();
+        List<Face> faces = new ArrayList<Face>();
         int minFaceSize = 0;
         int minEyeSize = 0;
+        int height = image.rows();
+        minFaceSize = Math.round(height * 0.2f);
+        minEyeSize = Math.max(Math.round(minFaceSize * 0.1f), 20);
+        
         Mat hatimg = Imgcodecs.imread("data/hat2.png");
-        float hatAspect = hatimg.width() / (float)hatimg.height();
         
         while (isRunning) {
             vcam.read(image);
-                      
-            Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
-            Imgproc.equalizeHist(grayImage, grayImage);
             
-            if (minFaceSize == 0)
-            {
-                int height = grayImage.rows();
-                minFaceSize = Math.round(height * 0.2f);
-                minEyeSize = Math.max(Math.round(minFaceSize * 0.1f), 20);
-            }
+            faces.clear(); // temp
+            detectFaces(image, faces, faceCascade, eyeCascade, minFaceSize, minEyeSize);
+            
+            drawHats(image, faces, hatimg);
 
-            faceCascade.detectMultiScale(grayImage, faces, 1.1, 2, 0 | Objdetect.CASCADE_SCALE_IMAGE, new Size(minFaceSize, minFaceSize), new Size());
-            
-            Rect[] facesArray = faces.toArray();
-            for (int i = 0; i < facesArray.length; i++) {
-                
-                Point faceTl = facesArray[i].tl();
-                Point faceBr = facesArray[i].br();
-                Mat faceMat = grayImage.submat(facesArray[i]);
-                
-                Imgproc.rectangle(image, faceTl, faceBr, new Scalar(0, 255, 0, 255), 3);
-                
-                MatOfRect eyes = new MatOfRect();
-                eyeCascade.detectMultiScale(faceMat, eyes, 1.1, 10, 0 | Objdetect.CASCADE_SCALE_IMAGE, new Size(minEyeSize, minEyeSize), new Size());
-                
-                Rect[] eyesArray = eyes.toArray();
-                for (int j = 0; j < eyesArray.length; j++) {
-                    
-                    Point eyeRelTl = eyesArray[j].tl();
-                    Point eyeRelBr = eyesArray[j].br();
-                    
-                    Point eyeAbsTl = new Point(eyeRelTl.x + faceTl.x, eyeRelTl.y + faceTl.y);  
-                    Point eyeAbsBr = new Point(eyeRelBr.x + faceTl.x, eyeRelBr.y + faceTl.y);  
-                    
-                    Imgproc.rectangle(image, eyeAbsTl, eyeAbsBr, new Scalar(255, 0, 0, 255), 2);
-                }
-                
-                
-                Rect roi = facesArray[i].clone();
-                Size hatSize = new Size(roi.width * 0.8, roi.width * 0.8 / hatAspect);
-                Mat hat = new Mat();
-                Imgproc.resize(hatimg, hat, hatSize);
-                
-                roi.x = (int) Math.max(roi.x + 0.5 * (roi.width - hatSize.width), 0);
-                roi.y = (int) Math.max(roi.y - hatSize.height, 0);
-                roi.height = (int) Math.min(hatSize.height, image.height() - roi.y);
-                roi.width  = (int) Math.min(hatSize.width, image.width() - roi.x);
-                hat.copyTo(image.submat(roi));
-            }
-            
             //Mat dft = applyDFT(grayImage);
             //Mat restored = applyInverseDFT(dft, CvType.CV_8U);
-            
+
             im.showImage(image);
         }
         vcam.release();
         System.exit(0);
+    }
+    
+    public static void drawHats(Mat image, List<Face> faces, Mat hatimg) {
+        
+        float hatAspect = hatimg.width() / (float) hatimg.height();
+
+        for (int i = 0; i < faces.size(); i++) {
+       
+            Rect hatRect = faces.get(i).faceRect.clone();
+            Size hatSize = new Size(hatRect.width * 0.8, hatRect.width * 0.8 / hatAspect);
+            Mat hat = new Mat();
+            Imgproc.resize(hatimg, hat, hatSize);
+            
+            hatRect.x = (int) Math.max(hatRect.x + 0.5 * (hatRect.width - hatSize.width), 0);
+            hatRect.y = (int) Math.max(hatRect.y - hatSize.height, 0);
+            hatRect.height = (int) Math.min(hatSize.height, image.height() - hatRect.y);
+            hatRect.width = (int) Math.min(hatSize.width, image.width() - hatRect.x);
+            hat.copyTo(image.submat(hatRect));
+        }
+    }
+    
+    
+    public static void detectFaces(Mat image, List<Face> faceList, CascadeClassifier faceCascade, CascadeClassifier eyeCascade,
+                                         int minFaceSize, int minEyeSize) {
+    
+        Mat grayImage = new Mat();
+                
+        Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
+        Imgproc.equalizeHist(grayImage, grayImage);
+        
+        MatOfRect faceRects = new MatOfRect();
+        
+        faceCascade.detectMultiScale(grayImage, faceRects, 1.1, 2, Objdetect.CASCADE_SCALE_IMAGE, new Size(minFaceSize, minFaceSize), new Size());
+        
+        Rect[] facesArray = faceRects.toArray();
+        for (int i = 0; i < facesArray.length; i++) {
+            
+            Point faceTl = facesArray[i].tl();
+            Point faceBr = facesArray[i].br();
+            
+            Mat faceMat = grayImage.submat(facesArray[i]).clone();
+            
+            Imgproc.rectangle(image, faceTl, faceBr, new Scalar(0, 255, 0, 255), 3);
+            
+            MatOfRect eyeRects = new MatOfRect();
+            
+            eyeCascade.detectMultiScale(faceMat, eyeRects, 1.1, 10, Objdetect.CASCADE_SCALE_IMAGE, new Size(minEyeSize, minEyeSize), new Size());
+            
+            ArrayList<Mat> eyeMats = new ArrayList<Mat>();
+            
+            Rect[] eyesArray = eyeRects.toArray();
+            for (int j = 0; j < eyesArray.length; j++) {
+                
+                Point eyeRelTl = eyesArray[j].tl();
+                Point eyeRelBr = eyesArray[j].br();
+                
+                Point eyeAbsTl = new Point(eyeRelTl.x + faceTl.x, eyeRelTl.y + faceTl.y);  
+                Point eyeAbsBr = new Point(eyeRelBr.x + faceTl.x, eyeRelBr.y + faceTl.y);  
+                
+                Rect eyeRect = new Rect(eyeAbsTl, eyeAbsBr);
+                
+                eyeMats.add(grayImage.submat(eyeRect).clone());
+                
+                Imgproc.rectangle(image, eyeAbsTl, eyeAbsBr, new Scalar(255, 0, 0, 255), 2);
+            }
+            
+            Face f = new Face(facesArray[i], faceMat, eyesArray, eyeMats);
+            faceList.add(f);
+        }
     }
     
     /**
