@@ -86,8 +86,6 @@ public class Main {
         minFaceSize = Math.round(height * 0.1f);
         minEyeSize = Math.max(Math.round(minFaceSize * 0.1f), 10);
 
-        Mat hatimg = Imgcodecs.imread("data/hat2.png");
-
         int frameCounter = 0;
         
         while (isRunning) {
@@ -112,33 +110,12 @@ public class Main {
                 long t1 = System.nanoTime();
                 im.Window.setTitle("Camera: " + cameraIndex + " - " + ((t1 - t0) / 1000000.0f) + "ms");
     
-                drawHats(image, faces, hatimg);
-                
                 im.showImage(image);
     
                 frameCounter++;
             }
         }
         vcam.release();
-    }
-
-    public static void drawHats(Mat image, List<Face> faces, Mat hatimg) {
-
-        float hatAspect = hatimg.width() / (float) hatimg.height();
-
-        for (int i = 0; i < faces.size(); i++) {
-
-            Rect hatRect = faces.get(i).faceRect.clone();
-            Size hatSize = new Size(hatRect.width * 0.8, hatRect.width * 0.8 / hatAspect);
-            Mat hat = new Mat();
-            Imgproc.resize(hatimg, hat, hatSize);
-
-            hatRect.x = (int) Math.max(hatRect.x + 0.5 * (hatRect.width - hatSize.width), 0);
-            hatRect.y = (int) Math.max(hatRect.y - hatSize.height, 0);
-            hatRect.height = (int) Math.min(hatSize.height, image.height() - hatRect.y);
-            hatRect.width = (int) Math.min(hatSize.width, image.width() - hatRect.x);
-            hat.copyTo(image.submat(hatRect));
-        }
     }
 
     public static void trackFaces(Mat image, List<Face> faceList) {
