@@ -96,9 +96,6 @@ public class Main {
             
                 vcam.read(image);
     
-                System.out.println(image.rows() + "r");
-                System.out.println(image.cols() + "c");
-                
                 long t0 = System.nanoTime();
                 
                 if (faces.isEmpty()) {
