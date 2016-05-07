@@ -1,57 +1,22 @@
 
-import java.util.Arrays;
-import java.util.List;
-
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfRect;
 import org.opencv.core.Rect;
 
-
 public class Face {
+    
+    /**
+     * Rectangle (usually square) containing the face.
+     */
     Rect faceRect;
+    
+    /**
+     * Grayscale image data for the face, for reuse in detection. (with histogram normalization applied)
+     */
     Mat faceData;
-    List<Rect> eyeRects;
-    List<Mat> eyeData;
     
-    Face(Rect faceRect, Mat faceData, List<Rect> eyeRects, List<Mat> eyeData) {
+    
+    Face(Rect faceRect, Mat faceData) {
         this.faceRect = faceRect;
         this.faceData = faceData;
-        this.eyeRects = eyeRects;
-        this.eyeData  = eyeData;
-    }
-    
-    Face(Rect faceRect, Mat faceData, Rect[] eyeRects, Mat[] eyeData) {
-        this.faceRect = faceRect;
-        this.faceData = faceData;
-        this.eyeRects = Arrays.asList(eyeRects);
-        this.eyeData  = Arrays.asList(eyeData);
-    }
-    
-    Face(Rect faceRect, Mat faceData, Rect[] eyeRects, List<Mat> eyeData) {
-        this.faceRect = faceRect;
-        this.faceData = faceData;
-        this.eyeRects = Arrays.asList(eyeRects);
-        this.eyeData  = eyeData;
-    }
-    
-    Face(Rect faceRect, Mat faceData, List<Rect> eyeRects, Mat[] eyeData) {
-        this.faceRect = faceRect;
-        this.faceData = faceData;
-        this.eyeRects = eyeRects;
-        this.eyeData  = Arrays.asList(eyeData);
-    }
-    
-    Face(Rect faceRect, Mat faceData, MatOfRect eyeRects, Mat[] eyeData) {
-        this.faceRect = faceRect;
-        this.faceData = faceData;
-        this.eyeRects = eyeRects.toList();
-        this.eyeData  = Arrays.asList(eyeData);
-    }
-    
-    Face(Rect faceRect, Mat faceData, MatOfRect eyeRects, List<Mat> eyeData) {
-        this.faceRect = faceRect;
-        this.faceData = faceData;
-        this.eyeRects = eyeRects.toList();
-        this.eyeData  = eyeData;
     }
 }

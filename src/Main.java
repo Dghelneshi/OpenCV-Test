@@ -7,52 +7,80 @@ import java.awt.event.WindowEvent;
 
 import org.opencv.core.Core;
 import org.opencv.core.Core.MinMaxLocResult;
-import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfRect;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.objdetect.Objdetect;
 import org.opencv.videoio.VideoCapture;
 
-/* TODO:
- *  - match eye template instead of moving with face
+/* TODO(Dgh):
  *  - look up parameters on detectMultiScale (rejectLevel, etc)
- *  - try out more classifiers
- *  - maybe delete face and/or eye area from image after each detection to avoid multiples 
- *  - detect faces over 2-3 frames, choose only those which are in all frames, then track them over a longer period (1sec?)
+ *  - implement a very simple state machine to handle different detection phases
+ *  - refactor out of main() and into a separate class
+ *  - try hybrid tracking approach to give reliable IDs to faces
+ *      a) use detection inside tracked rect + tolerance, then detect new faces *only outside that rect* (problems with overlap for profiles)
+ *      b) track first, then detect, then try to match detected faces to tracked faces (how to handle each possible case?)
+ *      c) combine a+b, use tracking as strong hint for detection (change detect parameters for tracked area to be more lenient)      
+ *      d) detect first, then match with last known faces (center position and/or template match)
+ *      e) always track in addition to detect, only remove tracking completely if rect touches image border
+ *       \- need to test cases where tracking *should* be lost, maybe decay maximum valid diff over time?
+ *       \- possibly too complicated to account for every edge case with this method 
+ *       
+ *  - detect faces over 2-3 frames, choose only those which are in all frames
  *  - find a method for handling people moving out of camera fov while they are being tracked (re-detect on hitting edge?)
+ *  - determine tracking roi size using distance estimation + max angular velocity 
+ *  - provide a simple 3D velocity vector for faces across some time span (500ms?), handle Z-axis via size changes (math!)
+ *   \- time span needs to be at least as long as tracking phase for Z-axis to work! (synchronize?)
+ *  - refactor program into smaller, specialized functions (detection of arbitrary object? readability/maintainability benefit?)
+ *  - implement threadsafe access to List<Face> (offer copy? direct modification in synchronized sub-functions?)
+ *   \- think about threading architecture in general, look at what Java offers (Runnables?) 
  *  - fine-tune parameters according to available camera
+ *  - try out more classifiers
+ *  - look at possibilities for face recognition/biometrics (performance, accuracy, need face database?)
  */
 
 public class Main {
 
     public static boolean isRunning = true;
-    public static Imshow  im;
+
+    public static Imshow im;
     public static VideoCapture vcam;
+
     public static int cameraIndex = 0;
     public static int numCameras = 2;
-        
+
+    private static int desiredFrameRate = 30;
+    private static float desiredFrameTime = (1000.0f / desiredFrameRate);
+
+    /**
+     * Specifies how exact the match of a face between two frames has to be, smaller is more exact.
+     */
+    public static double matchTolerance = 0.1;
+    
+    
+
     public static void main(String[] args) {
+
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
 
+        // setup window
         im = new Imshow("Video Preview");
-        im.Window.setResizable(true);
-        
-        im.Window.addWindowListener(new WindowAdapter() {
+
+        im.window.addWindowListener(new WindowAdapter() {
             public void windowClosing(WindowEvent e) {
                 isRunning = false;
                 vcam.release(); // required to let java exit properly
             }
         });
-        
-        im.Window.addMouseListener(new MouseListener() {
+
+        im.window.addMouseListener(new MouseListener() {
             public void mouseClicked(MouseEvent e) {
+                // click to change camera (e.g. from webcam to virtual camera, for testing)
                 vcam.release();
                 cameraIndex++;
                 cameraIndex = cameraIndex % numCameras;
@@ -63,167 +91,176 @@ public class Main {
             public void mouseEntered(MouseEvent e) {}
             public void mouseExited(MouseEvent e) {}
         });
-        
-        Mat image = new Mat();
-        vcam = new VideoCapture(cameraIndex);
-        
-        if (vcam.isOpened() == false)
-            return;
 
-        // loop until image frames are not empty
-        while (image.empty()) {
+        // setup video capture
+        vcam = new VideoCapture(cameraIndex);
+
+        if (vcam.isOpened() == false) {
+            // something went wrong opening the camera, just exit for now
+            System.exit(1);
+        }
+
+        Mat image = new Mat();
+        Mat grayImage = new Mat();
+
+        // try reading from camera until image frames are not empty
+        while (image.empty() && isRunning) {
             vcam.read(image);
         }
-        
-        
-        CascadeClassifier faceCascade = new CascadeClassifier("data/haarcascades/haarcascade_frontalface_alt.xml");
-        CascadeClassifier eyeCascade = new CascadeClassifier("data/haarcascades/haarcascade_eye.xml");
 
+        CascadeClassifier faceCascade = new CascadeClassifier("data/haarcascades/haarcascade_frontalface_alt.xml");
+
+        int minFaceSize = Math.round(image.rows() * 0.1f); // faces cannot be smaller than 10% of frame height
         List<Face> faces = new ArrayList<Face>();
-        int minFaceSize = 0;
-        int minEyeSize = 0;
-        int height = image.rows();
-        minFaceSize = Math.round(height * 0.1f);
-        minEyeSize = Math.max(Math.round(minFaceSize * 0.1f), 10);
 
         int frameCounter = 0;
-        
+        long startTime = System.nanoTime();
+
         while (isRunning) {
-            
+
             if (vcam.isOpened()) {
-            
+
                 vcam.read(image);
-    
-                long t0 = System.nanoTime();
-                
-                if (faces.isEmpty()) {
-                    detectFaces(image, faces, faceCascade, eyeCascade, minFaceSize, minEyeSize);
+
+                // convert to grayscale and equalize histogram for further processing
+                Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
+                Imgproc.equalizeHist(grayImage, grayImage);
+
+                long detectStartTime = System.nanoTime();
+
+                if (faces.isEmpty()) { // we haven't detected anything yet
+                    detectFaces(grayImage, faces, faceCascade, minFaceSize);
                 }
-                else if ((frameCounter & 15) == 0) { // periodically reset faces, need something more sophisticated later on
+                else if ((frameCounter & 31) == 0) { // periodically reset faces, need something more sophisticated later on
                     faces.clear();
-                    detectFaces(image, faces, faceCascade, eyeCascade, minFaceSize, minEyeSize);
+                    detectFaces(grayImage, faces, faceCascade, minFaceSize);
                 }
-                else {
-                    trackFaces(image, faces);
+                else { // we have some faces we can track cheaply
+                    trackFaces(grayImage, faces);
                 }
+
+                // measure time spent on detection, display in window title
+                long detectEndTime = System.nanoTime();
+                float detectMillis = ((detectEndTime - detectStartTime) / 1000000.0f);
+                im.window.setTitle("Camera: " + cameraIndex + " - Detection/Tracking: " + detectMillis + "ms");
+
+                drawDebugRectangles(image, faces);
                 
-                long t1 = System.nanoTime();
-                im.Window.setTitle("Camera: " + cameraIndex + " - " + ((t1 - t0) / 1000000.0f) + "ms");
-    
                 im.showImage(image);
-    
+
                 frameCounter++;
+
+                // measure total time spent
+                long endTime = System.nanoTime();
+                float totalMillis = ((endTime - startTime) / 1000000.0f);
+
+                // update at desired framerate
+                try {
+                    float timeRemaining = (desiredFrameTime - totalMillis);
+                    long sleepMillis = (long) timeRemaining;
+                    int sleepNanos = (int) (1000000 * (timeRemaining - sleepMillis));
+                    
+                    if ((sleepMillis > 0) && (sleepNanos > 0)) {
+                        Thread.sleep(sleepMillis, sleepNanos);
+                    }
+                }
+                catch (InterruptedException e1) {}
             }
+            startTime = System.nanoTime();
         }
         vcam.release();
     }
 
-    public static void trackFaces(Mat image, List<Face> faceList) {
-        
-        // NOTE: need to handle moving out of the frame
+    /**
+     * Tracks faces by matching the data contained in {@code faceList} to a new image in {@code grayImage}. Draws yellow
+     * rectangles around their positions in {@code image}.<br>
+     * Make sure that {@code grayImage} is in grayscale and has a histogram equalization applied.
+     * 
+     * @param grayImage
+     *            {@code image} converted to grayscale, with histogram equalization applied
+     * @param faceList
+     */
+    public static void trackFaces(Mat grayImage, List<Face> faceList) {
 
-        Mat grayImage = new Mat();
+        int rectExpand = grayImage.cols() / 18; // TODO: find good name for divisor constant, pull out as member field
 
-        Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.equalizeHist(grayImage, grayImage);
-
-        int tolerance = Math.max((int) Math.round(image.cols() * 0.02), 10);
-
-        // try to match old faces in new frame
         for (int i = 0; i < faceList.size(); i++) {
-            Rect roi = faceList.get(i).faceRect.clone();
-            roi.x = Math.max(roi.x - tolerance, 0);
-            roi.y = Math.max(roi.y - tolerance, 0);
-            roi.width = Math.min(roi.width + tolerance * 2, image.width() - roi.x);
-            roi.height = Math.min(roi.height + tolerance * 2, image.height() - roi.y);
 
-            Mat faceMat = faceList.get(i).faceData;
+            Face f = faceList.get(i);
 
-            Mat matchedFace = new Mat(roi.width - faceMat.rows() + 1, roi.height - faceMat.cols() + 1, CvType.CV_8U);
+            // make a slightly larger rect than the face (region of interest)
+            Rect roi = f.faceRect.clone();
+            roi.x = Math.max(roi.x - rectExpand, 0);
+            roi.y = Math.max(roi.y - rectExpand, 0);
+            roi.width  = Math.min(roi.width  + rectExpand * 2, grayImage.width()  - roi.x);
+            roi.height = Math.min(roi.height + rectExpand * 2, grayImage.height() - roi.y);
 
-            Imgproc.matchTemplate(grayImage.submat(roi), faceMat, matchedFace, Imgproc.TM_SQDIFF_NORMED);
+            // try to match the old face data in the new image, inside the region of interest
+            Mat faceMat = f.faceData;
+            Mat matchMatrix = new Mat();
+            Imgproc.matchTemplate(grayImage.submat(roi), faceMat, matchMatrix, Imgproc.TM_SQDIFF_NORMED);
 
-            MinMaxLocResult minMax = Core.minMaxLoc(matchedFace);
+            // get best match location
+            MinMaxLocResult minMax = Core.minMaxLoc(matchMatrix);
 
-            if (minMax.minVal <= 0.1) { // likely match
-                Face f = faceList.get(i);
+            // likely match (use minVal for TM_SQDIFF_NORMED, maxVal and (1.0 - trackingTolerance) for other methods)
+            if (minMax.minVal <= matchTolerance) {
 
-                int newFaceX = (int) (roi.x + minMax.minLoc.x);
-                int newFaceY = (int) (roi.y + minMax.minLoc.y);
-                
-                f.faceRect.x = newFaceX;
-                f.faceRect.y = newFaceY;
+                // update face in list with new values
+                f.faceRect.x = (int) (roi.x + minMax.minLoc.x);
+                f.faceRect.y = (int) (roi.y + minMax.minLoc.y);
                 f.faceData = grayImage.submat(f.faceRect).clone();
-
-                Imgproc.rectangle(image, f.faceRect.tl(), f.faceRect.br(), new Scalar(0, 255, 255, 255), 2);
-
-                for (int j = 0; j < f.eyeRects.size(); j++) {
-
-                    Rect eyeRect = f.eyeRects.get(j);
-                    
-                    Point eyeRelTl = eyeRect.tl();
-                    Point eyeRelBr = eyeRect.br();
-                    
-                    Point eyeAbsTl = new Point(eyeRelTl.x + newFaceX, eyeRelTl.y + newFaceY);
-                    Point eyeAbsBr = new Point(eyeRelBr.x + newFaceX, eyeRelBr.y + newFaceY);
-
-                    Imgproc.rectangle(image, eyeAbsTl, eyeAbsBr, new Scalar(255, 0, 255, 255), 1);
-                }
-
             }
-            else { // not matched
+            else {
+                // not matched, remove face from active list
                 faceList.remove(i);
                 i--;
             }
         }
     }
 
-    public static void detectFaces(Mat image, List<Face> faceList, CascadeClassifier faceCascade, CascadeClassifier eyeCascade,
-                                   int minFaceSize, int minEyeSize) {
-
-        Mat grayImage = new Mat();
-
-        Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.equalizeHist(grayImage, grayImage);
+    /**
+     * Detects faces in {@code grayImage} and adds them to {@code faceList}.<br>
+     * Make sure that {@code grayImage} is in grayscale and has a histogram equalization applied.
+     * 
+     * @param grayImage
+     *            image converted to grayscale, with histogram equalization applied
+     * @param faceList
+     * @param faceCascade
+     * @param minFaceSize
+     *            faces cannot be smaller than this size in pixels (width or height)
+     */
+    public static void detectFaces(Mat grayImage, List<Face> faceList, CascadeClassifier faceCascade, int minFaceSize) {
 
         MatOfRect faceRects = new MatOfRect();
 
+        // detect faces in grayscale image
         faceCascade.detectMultiScale(grayImage, faceRects, 1.1, 3, Objdetect.CASCADE_SCALE_IMAGE, new Size(minFaceSize, minFaceSize), new Size());
 
-        Rect[] facesArray = faceRects.toArray();
-        for (int i = 0; i < facesArray.length; i++) {
+        Rect[] faceRectArray = faceRects.toArray();
+        for (Rect rect : faceRectArray) {
 
-            Point faceTl = facesArray[i].tl();
-            Point faceBr = facesArray[i].br();
+            // get pixel data for face
+            Mat faceMat = grayImage.submat(rect).clone();
 
-            Mat faceMat = grayImage.submat(facesArray[i]).clone();
-
-            Imgproc.rectangle(image, faceTl, faceBr, new Scalar(0, 255, 0, 255), 2);
-
-            MatOfRect eyeRects = new MatOfRect();
-
-            eyeCascade.detectMultiScale(faceMat, eyeRects, 1.1, 5, Objdetect.CASCADE_SCALE_IMAGE, new Size(minEyeSize, minEyeSize), new Size());
-
-            ArrayList<Mat> eyeMats = new ArrayList<Mat>();
-
-            Rect[] eyesArray = eyeRects.toArray();
-            for (int j = 0; j < eyesArray.length; j++) {
-
-                Point eyeRelTl = eyesArray[j].tl();
-                Point eyeRelBr = eyesArray[j].br();
-
-                Point eyeAbsTl = new Point(eyeRelTl.x + faceTl.x, eyeRelTl.y + faceTl.y);
-                Point eyeAbsBr = new Point(eyeRelBr.x + faceTl.x, eyeRelBr.y + faceTl.y);
-
-                Rect eyeRect = new Rect(eyeAbsTl, eyeAbsBr);
-
-                eyeMats.add(grayImage.submat(eyeRect).clone());
-
-                Imgproc.rectangle(image, eyeAbsTl, eyeAbsBr, new Scalar(255, 0, 0, 255), 1);
-            }
-
-            Face f = new Face(facesArray[i], faceMat, eyesArray, eyeMats);
+            // add detected face to our list
+            Face f = new Face(rect, faceMat);
             faceList.add(f);
+        }
+    }
+    
+    /**
+     * Draws green rectangles around faces.
+     * @param image
+     *          image to draw to
+     * @param faceList
+     *          list of faces
+     */
+    public static void drawDebugRectangles(Mat image, List<Face> faceList) {
+        for (Face face : faceList) {
+            Point faceTl = face.faceRect.tl();
+            Point faceBr = face.faceRect.br();
+            Imgproc.rectangle(image, faceTl, faceBr, new Scalar(0, 255, 0, 255), 2);
         }
     }
 }

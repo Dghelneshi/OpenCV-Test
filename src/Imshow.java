@@ -1,10 +1,8 @@
-
-
 /*
- * Original Author: ATUL (https://github.com/master-atul/ImShow-Java-OpenCV)
- * Original Author's Comment: Thanks to Daniel Baggio , Jan Monterrubio and sutr90 for improvements
+ * Modified from:
  * 
- * LICENSE: Apache License v2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+ * Original Author: ATUL (https://github.com/master-atul/ImShow-Java-OpenCV)
+ * License: Apache License v2.0 (https://www.apache.org/licenses/LICENSE-2.0)
  */
 
 import java.awt.image.BufferedImage;
@@ -20,55 +18,38 @@ import org.opencv.imgproc.Imgproc;
 
 public class Imshow {
 
-    public JFrame Window;
+    public JFrame window;
     private ImageIcon image;
     private JLabel label;
-    private Boolean SizeCustom;
-    private int Height, Width;
+    private Boolean hasCustomSize;
+    private Size size;
 
     public Imshow(String title) {
-        Window = new JFrame();
+        window = new JFrame();
         image = new ImageIcon();
         label = new JLabel();
         label.setIcon(image);
-        Window.getContentPane().add(label);
-        Window.setResizable(false);
-        Window.setTitle(title);
-        SizeCustom = false;
-        Window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        window.getContentPane().add(label);
+        window.setResizable(false);
+        window.setTitle(title);
+        hasCustomSize = false;
+        window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        window.setVisible(true);
     }
 
     public Imshow(String title, int height, int width) {
-        SizeCustom = true;
-        Height = height;
-        Width = width;
-
-        Window = new JFrame();
-        image = new ImageIcon();
-        label = new JLabel();
-        
-        label.setIcon(image);
-        Window.getContentPane().add(label);
-        Window.setResizable(false);
-        Window.setTitle(title);
-        Window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        this(title);
+        hasCustomSize = true;
+        this.size = new Size(height, width);
     }
 
     public void showImage(Mat img) {
-        if (SizeCustom) {
-            Imgproc.resize(img, img, new Size(Height, Width));
+        if (hasCustomSize) {
+            Imgproc.resize(img, img, size);
         }
-        BufferedImage bufImage = null;
-        try {
-            bufImage = toBufferedImage(img);
-            image.setImage(bufImage);
-            Window.pack();
-            label.updateUI();
-            Window.setVisible(true);
-        }
-        catch (Exception e) {
-            e.printStackTrace();
-        }
+        image.setImage(toBufferedImage(img));
+        window.pack();
+        label.updateUI();
     }
 
     public BufferedImage toBufferedImage(Mat m) {
@@ -77,12 +58,11 @@ public class Imshow {
             type = BufferedImage.TYPE_3BYTE_BGR;
         }
         int bufferSize = m.channels() * m.cols() * m.rows();
-        byte[] b = new byte[bufferSize];
-        m.get(0, 0, b); // get all the pixels
+        byte[] buf = new byte[bufferSize];
+        m.get(0, 0, buf); // get all the pixels
         BufferedImage image = new BufferedImage(m.cols(), m.rows(), type);
         final byte[] targetPixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();
-        System.arraycopy(b, 0, targetPixels, 0, b.length);
+        System.arraycopy(buf, 0, targetPixels, 0, buf.length);
         return image;
-
     }
 }
