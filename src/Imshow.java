@@ -33,7 +33,7 @@ public class Imshow {
         window.setResizable(false);
         window.setTitle(title);
         hasCustomSize = false;
-        window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        window.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         window.setVisible(true);
     }
 
