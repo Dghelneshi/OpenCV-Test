@@ -3,113 +3,113 @@ import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
-public class CamAngelPixelCalibration {
+public class CamAnglePixelCalibration {
 
 	Mat image = new Mat();
 	double width; // 640
 	double height; // 480
-	double angelWidth = 60;
-	double angelHeight = 30;
+	double angleWidth = 60;
+	double angleHeight = 30;
 
-	public CamAngelPixelCalibration() {
+	public CamAnglePixelCalibration() {
 	}
 
-	public CamAngelPixelCalibration(Mat image) {
+	public CamAnglePixelCalibration(Mat image) {
 		this.image = image;
 		width = image.width();
 		height = image.height();
 	}
 
-	public Point calcPixeltoAngel(Point point) {
-		double xAngelCoordinates, yAngelCoordinates;
+	public Point calcPixeltoAngle(Point point) {
+		double xAngleCoordinates, yAngleCoordinates;
 		double xPixelCoordinates, yPixelCoordinates;
 		xPixelCoordinates = point.x;
 		yPixelCoordinates = point.y;
 
 		if (xPixelCoordinates == (width / 2)) {
-			xAngelCoordinates = 0;
+			xAngleCoordinates = 0;
 		} else if (xPixelCoordinates > (width / 2)) {
-			xAngelCoordinates = (angelWidth / 2) / (width / 2) * (xPixelCoordinates - (width / 2));
+			xAngleCoordinates = (angleWidth / 2) / (width / 2) * (xPixelCoordinates - (width / 2));
 		} else { // xPixelCoordinates < width/2
-			xAngelCoordinates = ((angelWidth / 2) / (width / 2) * xPixelCoordinates) - (angelWidth / 2);
+			xAngleCoordinates = ((angleWidth / 2) / (width / 2) * xPixelCoordinates) - (angleWidth / 2);
 		}
 
 		if (yPixelCoordinates == (height / 2)) {
-			yAngelCoordinates = 0;
+			yAngleCoordinates = 0;
 		} else if (yPixelCoordinates > (height / 2)) {
-			yAngelCoordinates = -((angelHeight / 2) / (height / 2) * (yPixelCoordinates - (height / 2)));
+			yAngleCoordinates = -((angleHeight / 2) / (height / 2) * (yPixelCoordinates - (height / 2)));
 		} else { // xPixelCoordinates < height/2
-			yAngelCoordinates = (angelHeight / 2) - ((angelHeight / 2) / (height / 2) * yPixelCoordinates);
+			yAngleCoordinates = (angleHeight / 2) - ((angleHeight / 2) / (height / 2) * yPixelCoordinates);
 		}
 
-		return new Point(xAngelCoordinates, yAngelCoordinates);
+		return new Point(xAngleCoordinates, yAngleCoordinates);
 	}
 
-	public double calcPixeltoAngelX(double xPixelCoordinates) {
-		double xAngelCoordinates;
+	public double calcPixeltoAngleX(double xPixelCoordinates) {
+		double xAngleCoordinates;
 		if (xPixelCoordinates == (width / 2)) {
-			xAngelCoordinates = 0;
+			xAngleCoordinates = 0;
 		} else if (xPixelCoordinates > (width / 2)) {
-			xAngelCoordinates = (angelWidth / 2) / (width / 2) * (xPixelCoordinates - (width / 2));
+			xAngleCoordinates = (angleWidth / 2) / (width / 2) * (xPixelCoordinates - (width / 2));
 		} else { // xPixelCoordinates < width/2
-			xAngelCoordinates = ((angelWidth / 2) / (width / 2) * xPixelCoordinates) - (angelWidth / 2);
+			xAngleCoordinates = ((angleWidth / 2) / (width / 2) * xPixelCoordinates) - (angleWidth / 2);
 		}
-		return xAngelCoordinates;
+		return xAngleCoordinates;
 	}
 
-	public double calcPixeltoAngelY(double yPixelCoordinates) {
-		double yAngelCoordinates;
+	public double calcPixeltoAngleY(double yPixelCoordinates) {
+		double yAngleCoordinates;
 		if (yPixelCoordinates == (height / 2)) {
-			yAngelCoordinates = 0;
+			yAngleCoordinates = 0;
 		} else if (yPixelCoordinates > (height / 2)) {
-			yAngelCoordinates = -((angelHeight / 2) / (height / 2) * (yPixelCoordinates - (height / 2)));
+			yAngleCoordinates = -((angleHeight / 2) / (height / 2) * (yPixelCoordinates - (height / 2)));
 		} else { // xPixelCoordinates < height/2
-			yAngelCoordinates = (angelHeight / 2) - ((angelHeight / 2) / (height / 2) * yPixelCoordinates);
+			yAngleCoordinates = (angleHeight / 2) - ((angleHeight / 2) / (height / 2) * yPixelCoordinates);
 		}
 
-		return yAngelCoordinates;
+		return yAngleCoordinates;
 	}
 
-	public Point calcAngeltoPixel(Point angel) {
+	public Point calcAngletoPixel(Point angle) {
 
-		double xAngelCoordinates, yAngelCoordinates;
+		double xAngleCoordinates, yAngleCoordinates;
 		double xPixelCoordinates, yPixelCoordinates;
-		xAngelCoordinates = angel.x;
-		yAngelCoordinates = angel.y;
+		xAngleCoordinates = angle.x;
+		yAngleCoordinates = angle.y;
 
-		if (xAngelCoordinates > 0) {
-			xPixelCoordinates = (width / 2) / (angelWidth / 2) * (xAngelCoordinates) + (width / 2);
-		} else { // xAngelCoordinates < angelWidth/2
-			xPixelCoordinates = (width / 2) / -(angelWidth / 2) * (-(angelWidth / 2) - (xAngelCoordinates));
+		if (xAngleCoordinates > 0) {
+			xPixelCoordinates = (width / 2) / (angleWidth / 2) * (xAngleCoordinates) + (width / 2);
+		} else { // xAngleCoordinates < angleWidth/2
+			xPixelCoordinates = (width / 2) / -(angleWidth / 2) * (-(angleWidth / 2) - (xAngleCoordinates));
 		}
 
-		if (yAngelCoordinates > 0) {
-			yPixelCoordinates = (height / 2) / (angelHeight / 2) * ((angelHeight / 2) - (yAngelCoordinates));
-		} else { // yAngelCoordinates < angelHeight/2 240/15* -(x) +240
-			yPixelCoordinates = (height / 2) / (angelHeight / 2) * -(yAngelCoordinates) + (height / 2);
+		if (yAngleCoordinates > 0) {
+			yPixelCoordinates = (height / 2) / (angleHeight / 2) * ((angleHeight / 2) - (yAngleCoordinates));
+		} else { // yAngleCoordinates < angleHeight/2 240/15* -(x) +240
+			yPixelCoordinates = (height / 2) / (angleHeight / 2) * -(yAngleCoordinates) + (height / 2);
 		}
 
 		return new Point(xPixelCoordinates, yPixelCoordinates);
 	}
 
-	public double calcAngeltoPixelX(double xAngelCoordinates) {
+	public double calcAngletoPixelX(double xAngleCoordinates) {
 		double xPixelCoordinates;
 
-		if (xAngelCoordinates > 0) {
-			xPixelCoordinates = (width / 2) / (angelWidth / 2) * (xAngelCoordinates) + (width / 2);
-		} else { // xAngelCoordinates < angelWidth/2
-			xPixelCoordinates = (width / 2) / -(angelWidth / 2) * (-(angelWidth / 2) - (xAngelCoordinates));
+		if (xAngleCoordinates > 0) {
+			xPixelCoordinates = (width / 2) / (angleWidth / 2) * (xAngleCoordinates) + (width / 2);
+		} else { // xAngleCoordinates < angleWidth/2
+			xPixelCoordinates = (width / 2) / -(angleWidth / 2) * (-(angleWidth / 2) - (xAngleCoordinates));
 		}
 		return xPixelCoordinates;
 	}
 
-	public double calcAngeltoPixelY(double yAngelCoordinates) {
+	public double calcAngletoPixelY(double yAngleCoordinates) {
 		double yPixelCoordinates;
 
-		if (yAngelCoordinates > 0) {
-			yPixelCoordinates = (height / 2) / (angelHeight / 2) * ((angelHeight / 2) - (yAngelCoordinates));
-		} else { // yAngelCoordinates < angelHeight/2 240/15* -(x) +240
-			yPixelCoordinates = (height / 2) / (angelHeight / 2) * -(yAngelCoordinates) + (height / 2);
+		if (yAngleCoordinates > 0) {
+			yPixelCoordinates = (height / 2) / (angleHeight / 2) * ((angleHeight / 2) - (yAngleCoordinates));
+		} else { // yAngleCoordinates < angleHeight/2 240/15* -(x) +240
+			yPixelCoordinates = (height / 2) / (angleHeight / 2) * -(yAngleCoordinates) + (height / 2);
 		}
 
 		return yPixelCoordinates;
@@ -118,35 +118,35 @@ public class CamAngelPixelCalibration {
 	// Point p1 = new Point(0, 200);
 	// Point p2 = new Point(600, 200);
 
-	public String getXAngelText(int i) {
+	public String getXAngleText(int i) {
 		String str = "";
 		switch (i) {
 		case 0:
-			str = "" + angelWidth / (-2);
+			str = "" + angleWidth / (-2);
 			break;
 		case 1:
-			str = "" + angelWidth / (-8) * 3;
+			str = "" + angleWidth / (-8) * 3;
 			break;
 		case 2:
-			str = "" + angelWidth / (-4);
+			str = "" + angleWidth / (-4);
 			break;
 		case 3:
-			str = "" + angelWidth / (-8);
+			str = "" + angleWidth / (-8);
 			break;
 		case 4:
 			str = "0";
 			break;
 		case 5:
-			str = "" + angelWidth / (8);
+			str = "" + angleWidth / (8);
 			break;
 		case 6:
-			str = "" + angelWidth / (4);
+			str = "" + angleWidth / (4);
 			break;
 		case 7:
-			str = "" + angelWidth / (8) * 3;
+			str = "" + angleWidth / (8) * 3;
 			break;
 		case 8:
-			str = "" + angelWidth / (2);
+			str = "" + angleWidth / (2);
 			break;
 
 		default:
@@ -156,35 +156,35 @@ public class CamAngelPixelCalibration {
 		return str;
 	}
 
-	public String getYAngelText(int i) {
+	public String getYAngleText(int i) {
 		String str = "";
 		switch (i) {
 		case 0:
-			str = "" + angelHeight / (2);
+			str = "" + angleHeight / (2);
 			break;
 		case 1:
-			str = "" + angelHeight / (8) * 3;
+			str = "" + angleHeight / (8) * 3;
 			break;
 		case 2:
-			str = "" + angelHeight / (4);
+			str = "" + angleHeight / (4);
 			break;
 		case 3:
-			str = "" + angelHeight / (8);
+			str = "" + angleHeight / (8);
 			break;
 		case 4:
 			str = "0";
 			break;
 		case 5:
-			str = "" + angelHeight / (-8);
+			str = "" + angleHeight / (-8);
 			break;
 		case 6:
-			str = "" + angelHeight / (-4);
+			str = "" + angleHeight / (-4);
 			break;
 		case 7:
-			str = "" + angelHeight / (-8) * 3;
+			str = "" + angleHeight / (-8) * 3;
 			break;
 		case 8:
-			str = "" + angelHeight / (-2);
+			str = "" + angleHeight / (-2);
 			break;
 
 		default:
@@ -291,15 +291,15 @@ public class CamAngelPixelCalibration {
 		Imgproc.line(image, pb1_8, pb2_8, new Scalar(0, 255, 0, 0), 1);
 
 		// Skalar Beschriftung auf Breitengrad
-		Imgproc.putText(image, getXAngelText(0), pb_0Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getXAngelText(1), pb_1Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getXAngelText(2), pb_2Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getXAngelText(3), pb_3Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getXAngelText(4), pb_4Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getXAngelText(5), pb_5Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getXAngelText(6), pb_6Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getXAngelText(7), pb_7Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getXAngelText(8), pb_8Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(0), pb_0Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(1), pb_1Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(2), pb_2Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(3), pb_3Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(4), pb_4Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(5), pb_5Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(6), pb_6Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(7), pb_7Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getXAngleText(8), pb_8Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
 
 		// Skalar Markierungen auf Hoehengrad einzeichnen
 
@@ -314,16 +314,16 @@ public class CamAngelPixelCalibration {
 		Imgproc.line(image, pl1_8, pl2_8, new Scalar(0, 255, 0, 0), 1);
 
 		// Skalar Beschriftung auf Hoehengrad
-		Imgproc.putText(image, getYAngelText(0), pl_0Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getYAngelText(1), pl_1Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getYAngelText(2), pl_2Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getYAngelText(3), pl_3Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		// Imgproc.putText(image, getXAngelText(4), pl_4Text, 3, 0.5, new
+		Imgproc.putText(image, getYAngleText(0), pl_0Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getYAngleText(1), pl_1Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getYAngleText(2), pl_2Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getYAngleText(3), pl_3Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		// Imgproc.putText(image, getXAngleText(4), pl_4Text, 3, 0.5, new
 		// Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getYAngelText(5), pl_5Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getYAngelText(6), pl_6Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getYAngelText(7), pl_7Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
-		Imgproc.putText(image, getYAngelText(8), pl_8Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getYAngleText(5), pl_5Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getYAngleText(6), pl_6Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getYAngleText(7), pl_7Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
+		Imgproc.putText(image, getYAngleText(8), pl_8Text, 3, 0.5, new Scalar(0, 255, 0, 0), 1);
 	}
 
 }

@@ -101,7 +101,7 @@ public class Main {
 
 				vcam.read(image);
 
-				CamAngelPixelCalibration capc = new CamAngelPixelCalibration(image);
+				CamAnglePixelCalibration capc = new CamAnglePixelCalibration(image);
 				capc.printHUD();
 
 				// Point p1 = new Point(0, 200);
@@ -129,21 +129,21 @@ public class Main {
 				// " + image.height() + " pixel");
 				// im.Window.setTitle("CalcPtA :" + im.Window.getMousePosition()
 				// + " Pixel= " +
-				// capc.calcPixeltoAngel(im.Window.getMousePosition()) );
+				// capc.calcPixeltoAngle(im.Window.getMousePosition()) );
 				Point a1 = new Point(80, 360);
 				Point b1 = new Point(-30, 15);
 				Point b2 = new Point(-30, -15);
-				double xAngel1 = 15;
-				double xAngel2 = -15;
-				double yAngel1 = 15;
-				double yAngel2 = -15;
+				double xAngle1 = 15;
+				double xAngle2 = -15;
+				double yAngle1 = 15;
+				double yAngle2 = -15;
 				
-//				im.Window.setTitle("CalcPtAX : 290 Pixel= " + capc.calcPixeltoAngelX(290));
-//				im.Window.setTitle("CalcPtAY : 60 Pixel= " + capc.calcPixeltoAngelY(480));
-//				im.Window.setTitle("CalcPtA : Point(80, 360) = " + capc.calcPixeltoAngel(a1));
-//				im.Window.setTitle("CalcAtP : Point" + b1 + " = " + capc.calcAngeltoPixel(b1) + "    CalcAtP : Point"+ b2 +" = " + capc.calcAngeltoPixel(b2));
-//				im.Window.setTitle("CalcAtPX : XAngel " + xAngel1 + " = " + capc.calcAngeltoPixelX(xAngel1) + "    CalcAtPX : XAngel "+ xAngel2 +" = " + capc.calcAngeltoPixelX(xAngel2));
-				im.Window.setTitle("CalcAtPY : YAngel " + yAngel1 + " = " + capc.calcAngeltoPixelY(yAngel1) + "    CalcAtPX : XAngel "+ yAngel2 +" = " + capc.calcAngeltoPixelY(yAngel2));
+				im.Window.setTitle("CalcPtAX : 290 Pixel= " + capc.calcPixeltoAngleX(290));
+				im.Window.setTitle("CalcPtAY : 60 Pixel= " + capc.calcPixeltoAngleY(480));
+				im.Window.setTitle("CalcPtA : Point(80, 360) = " + capc.calcPixeltoAngle(a1));
+				im.Window.setTitle("CalcAtP : Point" + b1 + " = " + capc.calcAngletoPixel(b1) + "    CalcAtP : Point"+ b2 +" = " + capc.calcAngletoPixel(b2));
+				im.Window.setTitle("CalcAtPX : XAngle " + xAngle1 + " = " + capc.calcAngletoPixelX(xAngle1) + "    CalcAtPX : XAngle "+ xAngle2 +" = " + capc.calcAngletoPixelX(xAngle2));
+				im.Window.setTitle("CalcAtPY : YAngle " + yAngle1 + " = " + capc.calcAngletoPixelY(yAngle1) + "    CalcAtPX : XAngle "+ yAngle2 +" = " + capc.calcAngletoPixelY(yAngle2));
 
 
 				im.showImage(image);
@@ -275,5 +275,5 @@ public class Main {
 		}
 	}
 
-	// public double CamAngelPixelCalibration()
+	// public double CamAnglePixelCalibration()
 }
