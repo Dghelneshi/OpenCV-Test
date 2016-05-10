@@ -5,11 +5,11 @@ import org.opencv.imgproc.Imgproc;
 
 public class CamAnglePixelCalibration {
 
-	Mat image = new Mat();
-	double width; // 640
-	double height; // 480
-	double angleWidth = 60;
-	double angleHeight = 30;
+	private Mat image = new Mat();
+	private double width; // 640
+	private double height; // 480
+	private final static double angleWidth = 60;
+	private final static double angleHeight = 30;
 
 	public CamAnglePixelCalibration() {
 	}

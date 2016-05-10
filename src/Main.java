@@ -138,11 +138,11 @@ public class Main {
 				double yAngle1 = 15;
 				double yAngle2 = -15;
 				
-				im.Window.setTitle("CalcPtAX : 290 Pixel= " + capc.calcPixeltoAngleX(290));
-				im.Window.setTitle("CalcPtAY : 60 Pixel= " + capc.calcPixeltoAngleY(480));
-				im.Window.setTitle("CalcPtA : Point(80, 360) = " + capc.calcPixeltoAngle(a1));
-				im.Window.setTitle("CalcAtP : Point" + b1 + " = " + capc.calcAngletoPixel(b1) + "    CalcAtP : Point"+ b2 +" = " + capc.calcAngletoPixel(b2));
-				im.Window.setTitle("CalcAtPX : XAngle " + xAngle1 + " = " + capc.calcAngletoPixelX(xAngle1) + "    CalcAtPX : XAngle "+ xAngle2 +" = " + capc.calcAngletoPixelX(xAngle2));
+//				im.Window.setTitle("CalcPtAX : 290 Pixel= " + capc.calcPixeltoAngleX(290));
+//				im.Window.setTitle("CalcPtAY : 60 Pixel= " + capc.calcPixeltoAngleY(480));
+//				im.Window.setTitle("CalcPtA : Point(80, 360) = " + capc.calcPixeltoAngle(a1));
+//				im.Window.setTitle("CalcAtP : Point" + b1 + " = " + capc.calcAngletoPixel(b1) + "    CalcAtP : Point"+ b2 +" = " + capc.calcAngletoPixel(b2));
+//				im.Window.setTitle("CalcAtPX : XAngle " + xAngle1 + " = " + capc.calcAngletoPixelX(xAngle1) + "    CalcAtPX : XAngle "+ xAngle2 +" = " + capc.calcAngletoPixelX(xAngle2));
 				im.Window.setTitle("CalcAtPY : YAngle " + yAngle1 + " = " + capc.calcAngletoPixelY(yAngle1) + "    CalcAtPX : XAngle "+ yAngle2 +" = " + capc.calcAngletoPixelY(yAngle2));
 
 
