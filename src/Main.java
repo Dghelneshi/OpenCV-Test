@@ -32,198 +32,248 @@ import org.opencv.videoio.VideoCapture;
 
 public class Main {
 
-    public static boolean isRunning = true;
-    public static Imshow  im;
-    public static VideoCapture vcam;
-    public static int cameraIndex = 0;
-    public static int numCameras = 2;
-        
-    public static void main(String[] args) {
-        System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+	public static boolean isRunning = true;
+	public static Imshow im;
+	public static VideoCapture vcam;
+	public static int cameraIndex = 0;
+	public static int numCameras = 2;
 
-        im = new Imshow("Video Preview");
-        im.Window.setResizable(true);
-        
-        im.Window.addWindowListener(new WindowAdapter() {
-            public void windowClosing(WindowEvent e) {
-                isRunning = false;
-                vcam.release(); // required to let java exit properly
-            }
-        });
-        
-        im.Window.addMouseListener(new MouseListener() {
-            public void mouseClicked(MouseEvent e) {
-                vcam.release();
-                cameraIndex++;
-                cameraIndex = cameraIndex % numCameras;
-                vcam = new VideoCapture(cameraIndex);
-            }
-            public void mousePressed(MouseEvent e) {}
-            public void mouseReleased(MouseEvent e) {}
-            public void mouseEntered(MouseEvent e) {}
-            public void mouseExited(MouseEvent e) {}
-        });
-        
-        Mat image = new Mat();
-        vcam = new VideoCapture(cameraIndex);
-        
-        if (vcam.isOpened() == false)
-            return;
+	public static void main(String[] args) {
+		System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
 
-        // loop until image frames are not empty
-        while (image.empty()) {
-            vcam.read(image);
-        }
-        
-        
-        CascadeClassifier faceCascade = new CascadeClassifier("data/haarcascades/haarcascade_frontalface_alt.xml");
-        CascadeClassifier eyeCascade = new CascadeClassifier("data/haarcascades/haarcascade_eye.xml");
+		im = new Imshow("Video Preview");
+		im.Window.setResizable(true);
 
-        List<Face> faces = new ArrayList<Face>();
-        int minFaceSize = 0;
-        int minEyeSize = 0;
-        int height = image.rows();
-        minFaceSize = Math.round(height * 0.1f);
-        minEyeSize = Math.max(Math.round(minFaceSize * 0.1f), 10);
+		im.Window.addWindowListener(new WindowAdapter() {
+			public void windowClosing(WindowEvent e) {
+				isRunning = false;
+				vcam.release(); // required to let java exit properly
+			}
+		});
 
-        int frameCounter = 0;
-        
-        while (isRunning) {
-            
-            if (vcam.isOpened()) {
-            
-                vcam.read(image);
-    
-                long t0 = System.nanoTime();
-                
-                if (faces.isEmpty()) {
-                    detectFaces(image, faces, faceCascade, eyeCascade, minFaceSize, minEyeSize);
-                }
-                else if ((frameCounter & 15) == 0) { // periodically reset faces, need something more sophisticated later on
-                    faces.clear();
-                    detectFaces(image, faces, faceCascade, eyeCascade, minFaceSize, minEyeSize);
-                }
-                else {
-                    trackFaces(image, faces);
-                }
-                
-                long t1 = System.nanoTime();
-                im.Window.setTitle("Camera: " + cameraIndex + " - " + ((t1 - t0) / 1000000.0f) + "ms");
-    
-                im.showImage(image);
-    
-                frameCounter++;
-            }
-        }
-        vcam.release();
-    }
+		im.Window.addMouseListener(new MouseListener() {
+			public void mouseClicked(MouseEvent e) {
+				vcam.release();
+				cameraIndex++;
+				cameraIndex = cameraIndex % numCameras;
+				vcam = new VideoCapture(cameraIndex);
+			}
 
-    public static void trackFaces(Mat image, List<Face> faceList) {
-        
-        // NOTE: need to handle moving out of the frame
+			public void mousePressed(MouseEvent e) {
+			}
 
-        Mat grayImage = new Mat();
+			public void mouseReleased(MouseEvent e) {
+			}
 
-        Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.equalizeHist(grayImage, grayImage);
+			public void mouseEntered(MouseEvent e) {
+			}
 
-        int tolerance = Math.max((int) Math.round(image.cols() * 0.02), 10);
+			public void mouseExited(MouseEvent e) {
+			}
+		});
 
-        // try to match old faces in new frame
-        for (int i = 0; i < faceList.size(); i++) {
-            Rect roi = faceList.get(i).faceRect.clone();
-            roi.x = Math.max(roi.x - tolerance, 0);
-            roi.y = Math.max(roi.y - tolerance, 0);
-            roi.width = Math.min(roi.width + tolerance * 2, image.width() - roi.x);
-            roi.height = Math.min(roi.height + tolerance * 2, image.height() - roi.y);
+		Mat image = new Mat();
+		vcam = new VideoCapture(cameraIndex);
 
-            Mat faceMat = faceList.get(i).faceData;
+		if (vcam.isOpened() == false)
+			return;
 
-            Mat matchedFace = new Mat(roi.width - faceMat.rows() + 1, roi.height - faceMat.cols() + 1, CvType.CV_8U);
+		// loop until image frames are not empty
+		while (image.empty()) {
+			vcam.read(image);
+		}
 
-            Imgproc.matchTemplate(grayImage.submat(roi), faceMat, matchedFace, Imgproc.TM_SQDIFF_NORMED);
+		CascadeClassifier faceCascade = new CascadeClassifier("data/haarcascades/haarcascade_frontalface_alt.xml");
+		CascadeClassifier eyeCascade = new CascadeClassifier("data/haarcascades/haarcascade_eye.xml");
 
-            MinMaxLocResult minMax = Core.minMaxLoc(matchedFace);
+		List<Face> faces = new ArrayList<Face>();
+		int minFaceSize = 0;
+		int minEyeSize = 0;
+		int height = image.rows();
+		minFaceSize = Math.round(height * 0.1f);
+		minEyeSize = Math.max(Math.round(minFaceSize * 0.1f), 10);
 
-            if (minMax.minVal <= 0.1) { // likely match
-                Face f = faceList.get(i);
+		int frameCounter = 0;
 
-                int newFaceX = (int) (roi.x + minMax.minLoc.x);
-                int newFaceY = (int) (roi.y + minMax.minLoc.y);
-                
-                f.faceRect.x = newFaceX;
-                f.faceRect.y = newFaceY;
-                f.faceData = grayImage.submat(f.faceRect).clone();
+		while (isRunning) {
 
-                Imgproc.rectangle(image, f.faceRect.tl(), f.faceRect.br(), new Scalar(0, 255, 255, 255), 2);
+			if (vcam.isOpened()) {
 
-                for (int j = 0; j < f.eyeRects.size(); j++) {
+				vcam.read(image);
 
-                    Rect eyeRect = f.eyeRects.get(j);
-                    
-                    Point eyeRelTl = eyeRect.tl();
-                    Point eyeRelBr = eyeRect.br();
-                    
-                    Point eyeAbsTl = new Point(eyeRelTl.x + newFaceX, eyeRelTl.y + newFaceY);
-                    Point eyeAbsBr = new Point(eyeRelBr.x + newFaceX, eyeRelBr.y + newFaceY);
+				CamAngelPixelCalibration capc = new CamAngelPixelCalibration(image);
+				capc.printHUD();
 
-                    Imgproc.rectangle(image, eyeAbsTl, eyeAbsBr, new Scalar(255, 0, 255, 255), 1);
-                }
+				// Point p1 = new Point(0, 200);
+				// Point p2 = new Point(600, 200);
+				// Imgproc.line(image,p1 , p2, new Scalar(255, 0, 255, 255), 3);
 
-            }
-            else { // not matched
-                faceList.remove(i);
-                i--;
-            }
-        }
-    }
+				long t0 = System.nanoTime();
 
-    public static void detectFaces(Mat image, List<Face> faceList, CascadeClassifier faceCascade, CascadeClassifier eyeCascade,
-                                   int minFaceSize, int minEyeSize) {
+				if (faces.isEmpty()) {
+					detectFaces(image, faces, faceCascade, eyeCascade, minFaceSize, minEyeSize);
+				} else if ((frameCounter & 15) == 0) { // periodically reset
+														// faces, need something
+														// more sophisticated
+														// later on
+					faces.clear();
+					detectFaces(image, faces, faceCascade, eyeCascade, minFaceSize, minEyeSize);
+				} else {
+					trackFaces(image, faces);
+				}
 
-        Mat grayImage = new Mat();
+				long t1 = System.nanoTime();
+				// im.Window.setTitle("Camera: " + cameraIndex + " - " + ((t1 -
+				// t0) / 1000000.0f) + "ms");
+				// im.Window.setTitle("Breite und Hoehe: " + image.width() + " -
+				// " + image.height() + " pixel");
+				// im.Window.setTitle("CalcPtA :" + im.Window.getMousePosition()
+				// + " Pixel= " +
+				// capc.calcPixeltoAngel(im.Window.getMousePosition()) );
+				Point a1 = new Point(80, 360);
+				Point b1 = new Point(-30, 15);
+				Point b2 = new Point(-30, -15);
+				double xAngel1 = 15;
+				double xAngel2 = -15;
+				double yAngel1 = 15;
+				double yAngel2 = -15;
+				
+//				im.Window.setTitle("CalcPtAX : 290 Pixel= " + capc.calcPixeltoAngelX(290));
+//				im.Window.setTitle("CalcPtAY : 60 Pixel= " + capc.calcPixeltoAngelY(480));
+//				im.Window.setTitle("CalcPtA : Point(80, 360) = " + capc.calcPixeltoAngel(a1));
+//				im.Window.setTitle("CalcAtP : Point" + b1 + " = " + capc.calcAngeltoPixel(b1) + "    CalcAtP : Point"+ b2 +" = " + capc.calcAngeltoPixel(b2));
+//				im.Window.setTitle("CalcAtPX : XAngel " + xAngel1 + " = " + capc.calcAngeltoPixelX(xAngel1) + "    CalcAtPX : XAngel "+ xAngel2 +" = " + capc.calcAngeltoPixelX(xAngel2));
+				im.Window.setTitle("CalcAtPY : YAngel " + yAngel1 + " = " + capc.calcAngeltoPixelY(yAngel1) + "    CalcAtPX : XAngel "+ yAngel2 +" = " + capc.calcAngeltoPixelY(yAngel2));
 
-        Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.equalizeHist(grayImage, grayImage);
 
-        MatOfRect faceRects = new MatOfRect();
+				im.showImage(image);
 
-        faceCascade.detectMultiScale(grayImage, faceRects, 1.1, 3, Objdetect.CASCADE_SCALE_IMAGE, new Size(minFaceSize, minFaceSize), new Size());
+				frameCounter++;
 
-        Rect[] facesArray = faceRects.toArray();
-        for (int i = 0; i < facesArray.length; i++) {
+				// double breite = im.Window.getWidth();
+				// double hoehe = im.Window.getHeight();
+				//
+				// System.out.println("Hoehe = " + hoehe);
+				// System.out.println("Breite = " + breite);
+				//
+				// System.out.println("height = " + height);
 
-            Point faceTl = facesArray[i].tl();
-            Point faceBr = facesArray[i].br();
+			}
+		}
 
-            Mat faceMat = grayImage.submat(facesArray[i]).clone();
+		vcam.release();
 
-            Imgproc.rectangle(image, faceTl, faceBr, new Scalar(0, 255, 0, 255), 2);
+	}
 
-            MatOfRect eyeRects = new MatOfRect();
+	public static void trackFaces(Mat image, List<Face> faceList) {
 
-            eyeCascade.detectMultiScale(faceMat, eyeRects, 1.1, 5, Objdetect.CASCADE_SCALE_IMAGE, new Size(minEyeSize, minEyeSize), new Size());
+		// NOTE: need to handle moving out of the frame
 
-            ArrayList<Mat> eyeMats = new ArrayList<Mat>();
+		Mat grayImage = new Mat();
 
-            Rect[] eyesArray = eyeRects.toArray();
-            for (int j = 0; j < eyesArray.length; j++) {
+		Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
+		Imgproc.equalizeHist(grayImage, grayImage);
 
-                Point eyeRelTl = eyesArray[j].tl();
-                Point eyeRelBr = eyesArray[j].br();
+		int tolerance = Math.max((int) Math.round(image.cols() * 0.02), 10);
 
-                Point eyeAbsTl = new Point(eyeRelTl.x + faceTl.x, eyeRelTl.y + faceTl.y);
-                Point eyeAbsBr = new Point(eyeRelBr.x + faceTl.x, eyeRelBr.y + faceTl.y);
+		// try to match old faces in new frame
+		for (int i = 0; i < faceList.size(); i++) {
+			Rect roi = faceList.get(i).faceRect.clone();
+			roi.x = Math.max(roi.x - tolerance, 0);
+			roi.y = Math.max(roi.y - tolerance, 0);
+			roi.width = Math.min(roi.width + tolerance * 2, image.width() - roi.x);
+			roi.height = Math.min(roi.height + tolerance * 2, image.height() - roi.y);
 
-                Rect eyeRect = new Rect(eyeAbsTl, eyeAbsBr);
+			Mat faceMat = faceList.get(i).faceData;
 
-                eyeMats.add(grayImage.submat(eyeRect).clone());
+			Mat matchedFace = new Mat(roi.width - faceMat.rows() + 1, roi.height - faceMat.cols() + 1, CvType.CV_8U);
 
-                Imgproc.rectangle(image, eyeAbsTl, eyeAbsBr, new Scalar(255, 0, 0, 255), 1);
-            }
+			Imgproc.matchTemplate(grayImage.submat(roi), faceMat, matchedFace, Imgproc.TM_SQDIFF_NORMED);
 
-            Face f = new Face(facesArray[i], faceMat, eyesArray, eyeMats);
-            faceList.add(f);
-        }
-    }
+			MinMaxLocResult minMax = Core.minMaxLoc(matchedFace);
+
+			if (minMax.minVal <= 0.1) { // likely match
+				Face f = faceList.get(i);
+
+				int newFaceX = (int) (roi.x + minMax.minLoc.x);
+				int newFaceY = (int) (roi.y + minMax.minLoc.y);
+
+				f.faceRect.x = newFaceX;
+				f.faceRect.y = newFaceY;
+				f.faceData = grayImage.submat(f.faceRect).clone();
+
+				Imgproc.rectangle(image, f.faceRect.tl(), f.faceRect.br(), new Scalar(0, 255, 255, 255), 2);
+
+				for (int j = 0; j < f.eyeRects.size(); j++) {
+
+					Rect eyeRect = f.eyeRects.get(j);
+
+					Point eyeRelTl = eyeRect.tl();
+					Point eyeRelBr = eyeRect.br();
+
+					Point eyeAbsTl = new Point(eyeRelTl.x + newFaceX, eyeRelTl.y + newFaceY);
+					Point eyeAbsBr = new Point(eyeRelBr.x + newFaceX, eyeRelBr.y + newFaceY);
+
+					Imgproc.rectangle(image, eyeAbsTl, eyeAbsBr, new Scalar(255, 0, 255, 255), 1);
+				}
+
+			} else { // not matched
+				faceList.remove(i);
+				i--;
+			}
+		}
+	}
+
+	public static void detectFaces(Mat image, List<Face> faceList, CascadeClassifier faceCascade,
+			CascadeClassifier eyeCascade, int minFaceSize, int minEyeSize) {
+
+		Mat grayImage = new Mat();
+
+		Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
+		Imgproc.equalizeHist(grayImage, grayImage);
+
+		MatOfRect faceRects = new MatOfRect();
+
+		faceCascade.detectMultiScale(grayImage, faceRects, 1.1, 3, Objdetect.CASCADE_SCALE_IMAGE,
+				new Size(minFaceSize, minFaceSize), new Size());
+
+		Rect[] facesArray = faceRects.toArray();
+		for (int i = 0; i < facesArray.length; i++) {
+
+			Point faceTl = facesArray[i].tl();
+			Point faceBr = facesArray[i].br();
+
+			Mat faceMat = grayImage.submat(facesArray[i]).clone();
+
+			Imgproc.rectangle(image, faceTl, faceBr, new Scalar(0, 255, 0, 255), 2);
+
+			MatOfRect eyeRects = new MatOfRect();
+
+			eyeCascade.detectMultiScale(faceMat, eyeRects, 1.1, 5, Objdetect.CASCADE_SCALE_IMAGE,
+					new Size(minEyeSize, minEyeSize), new Size());
+
+			ArrayList<Mat> eyeMats = new ArrayList<Mat>();
+
+			Rect[] eyesArray = eyeRects.toArray();
+			for (int j = 0; j < eyesArray.length; j++) {
+
+				Point eyeRelTl = eyesArray[j].tl();
+				Point eyeRelBr = eyesArray[j].br();
+
+				Point eyeAbsTl = new Point(eyeRelTl.x + faceTl.x, eyeRelTl.y + faceTl.y);
+				Point eyeAbsBr = new Point(eyeRelBr.x + faceTl.x, eyeRelBr.y + faceTl.y);
+
+				Rect eyeRect = new Rect(eyeAbsTl, eyeAbsBr);
+
+				eyeMats.add(grayImage.submat(eyeRect).clone());
+
+				Imgproc.rectangle(image, eyeAbsTl, eyeAbsBr, new Scalar(255, 0, 0, 255), 1);
+			}
+
+			Face f = new Face(facesArray[i], faceMat, eyesArray, eyeMats);
+			faceList.add(f);
+		}
+	}
+
+	// public double CamAngelPixelCalibration()
 }
