@@ -13,9 +13,11 @@ import org.opencv.objdetect.Objdetect;
 import org.opencv.videoio.VideoCapture;
 
 /* TODO(Dgh):
+ *  - FIXME: Track down bug with threads not exiting! Seems to only happen if started without debugger attached -_-
+ *  - FIXME: remove all traces of synchronize(faces)! could set bool to clear faces on next loop iteration or maybe set nextPhase
  *  - put some of these up as git issues
- *  - look up parameters on detectMultiScale (rejectLevel, etc)
  *  - implement a very simple state machine to handle different detection phases
+ *   \- state machine is currently driven by logic code instead of driving the code with the state machine!
  *  - try hybrid tracking approach to give reliable IDs to faces
  *      a) use detection inside tracked rect + tolerance, then detect new faces *only outside that rect* (problems with overlap for profiles)
  *      b) track first, then detect, then try to match detected faces to tracked faces (how to handle each possible case?)
@@ -24,14 +26,19 @@ import org.opencv.videoio.VideoCapture;
  *      e) always track in addition to detect, only remove tracking completely if rect touches image border
  *       \- need to test cases where tracking *should* be lost, maybe decay maximum valid diff over time?
  *       \- possibly too complicated to account for every edge case with this method 
- *       
- *  - detect faces over 2-3 frames, choose only those which are in all frames
+ *  
+ *  - detect faces over 2-3 frames, choose only those which are in all frames (use groupRectangles())
  *  - find a method for handling people moving out of camera fov while they are being tracked (re-detect on hitting edge?)
+ *  - maybe separate Face datastructure for internal (detection) and external use, copy over relevant data each frame (or on demand?)
+ *  - more perf statistics in debug window
  *  - check program behavior with different threads ending in different orders is fine (e.g. FD thread stops before window is closed)
+ *   \- window listeners need to be removed, but where?
  *  - maybe determine tracking roi size using distance estimation + max angular velocity 
  *  - maybe provide a 3D velocity vector for faces across some time span (500ms?), handle Z-axis via size changes (math!)
  *   \- time span needs to be at least as long as tracking phase for Z-axis to work! (synchronize?)
  *  - use messages from the main part of the project as signals to start/stop threads or open a debug window
+ *  - ask the operating system how many cameras are available instead of manual numCameras crap!
+ *  - test what happens in hard error cases like disconnecting a camera mid operation
  *  - fine-tune parameters according to available camera
  *  - try out more classifiers
  *  - look at possibilities for face recognition/biometrics (performance, accuracy, need face database?)
@@ -39,34 +46,93 @@ import org.opencv.videoio.VideoCapture;
 
 public class FaceDetector implements Runnable {
 
+    public static enum Phase {
+        FD_PHASE_WAIT,
+        FD_PHASE_DETECT,
+        FD_PHASE_TRACK,
+    }
+    
     private boolean isRunning = false;
 
+    private Phase activePhase = Phase.FD_PHASE_WAIT;
+    
     private DebugWindow debugWindow = new EmptyDebugWindow();
     
     private VideoCapture vcam;
     
-    private List<Face> faces = new ArrayList<Face>();
+    private final List<Face> faces = new ArrayList<Face>();
 
     private static int faceCounter = 0; // used to give unique IDs to faces
 
     private int cameraIndex = 0;
+    
+    /**
+     * The number of cameras available to the system (there is currently no system in place to ask the operating system
+     * to list the currently available cameras).
+     */
     private int numCameras = 1;
 
     private int desiredFrameRate = 30;
     private float desiredFrameTime = (1000.0f / desiredFrameRate);
 
+    
+    //////////////////////////
+    // DETECTION PARAMETERS //
+    //////////////////////////
+    
     /**
      * Specifies how exact the match of a face between two frames has to be.
-     * Smaller value is more accurate, but may cause the program to lose tracking with fast head movements.
+     * Smaller value is more accurate, but may cause the program to lose tracking with fast head movements.<br>
+     * Recommended values are from 0.05 to 0.2
      */
     private double matchTolerance = 0.1;
+    
+    /**
+     * This influences the size of the rectangle to search for a matching face betwen two frames. Smaller value is slower,
+     * but allows for larger movement between frames. May cause strange behavior if too small.<br>
+     * Recommended values are from 32 to 8
+     */
+    private int matchRectExpandDivisor = 18; // TODO: This variable name is too long and confusing!
+    
+    /**
+     * Specifies how much the image is scaled in each stage of face detection.
+     * Smaller value is more accurate, but slower. <b>Must be greater than 1.0</b> <br>
+     * Recommended values are between 1.05 and 1.6
+     */
+    private double detectScaleFactor = 1.1;
+    
+    /**
+     * Specifies how many neighboring faces should be detected in a candidate area before it is considered an actual face.
+     * Larger value avoids false positives, but may reject some actual faces.<br>
+     * Recommended values are from 2 to 6
+     */
+    private int detectMinNeighbors = 3;
+    
+    /**
+     * Specifies the minimum face size (width or height) for detection in pixels. Smaller values are slower, but can 
+     * detect faces further away from the camera. However, this may also cause more detection of random noise as faces.<br>
+     * Recommended values are between 10% and 25% of the frame height.
+     */
+    private int detectMinFaceSize = 64;
+    
+    
+    //////////////////////////////
+    // END DETECTION PARAMETERS //
+    //////////////////////////////
     
     
     public FaceDetector() {}
     
+    /**
+     * @param cameraIndex
+     * @param numCameras
+     *      see {@link #numCameras}
+     */
     public FaceDetector(int cameraIndex, int numCameras) {
+        this.numCameras = numCameras;
         this.cameraIndex = cameraIndex % numCameras;
     }
+    
     
     public void run() {
         
@@ -84,23 +150,25 @@ public class FaceDetector implements Runnable {
 
         CascadeClassifier faceCascade = new CascadeClassifier("data/haarcascades/haarcascade_frontalface_alt.xml");
 
-        int minFaceSize = Math.round(image.rows() * 0.1f); // faces cannot be smaller than 10% of frame height
-      
-        long frameCounter = 0;
         float redetectTimer = 0; // TODO: make constant, check if implementation is reasonable
         long oldTime = 0;
         long startTime = System.nanoTime();
         
         while (isRunning) {
 
-            synchronized(vcam) {
+            synchronized(this) {
                 vcam.read(image);
             }
 
+            // FIXME: this piece of code really should be removed or *at least* refactored into a method to get it out of sight
+            
+            //image = new Mat();
+            
             // wait if camera doesn't provide an image
             if (image.empty()) {
-            
-                debugWindow.setTitle("Camera: " + cameraIndex + " - waiting for camera...");
+                activePhase = Phase.FD_PHASE_WAIT;
+                
+                debugWindow.update(activePhase, 33, image, makeFaceListCopy());                
                 
                 try {
                     Thread.sleep(33);
@@ -110,81 +178,101 @@ public class FaceDetector implements Runnable {
                 continue;
             }
             
-            // convert to grayscale and equalize histogram for further processing
-            Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
-            Imgproc.equalizeHist(grayImage, grayImage);
-
             ////////////////////
             // FACE DETECTION //
             ////////////////////
             
-            long detectStartTime = System.nanoTime();
-                        
-            if (faces.isEmpty()) { // we haven't detected anything yet
-                detectFaces(grayImage, faces, faceCascade, minFaceSize);
-            }
-            else if (redetectTimer >= 500) { // periodically reset faces
-                redetectTimer -= 500;
-                synchronized(faces) {
-                    faces.clear();
-                }
-                detectFaces(grayImage, faces, faceCascade, minFaceSize);
-            }
-            else { // we have some faces we can track cheaply
-                trackFaces(grayImage, faces);
-            }
+            long phaseStartTime = System.nanoTime();
+            
+            // convert to grayscale and equalize histogram for further processing
+            Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
+            Imgproc.equalizeHist(grayImage, grayImage);
+            
+            Phase nextPhase = Phase.FD_PHASE_DETECT;
+            
+            switch(activePhase) {
 
-            long detectEndTime = System.nanoTime();
-            float detectMillis = deltaMillis(detectStartTime, detectEndTime);
+            case FD_PHASE_DETECT: {
+                detectFaces(grayImage, faces, faceCascade, detectMinFaceSize);
+                nextPhase = Phase.FD_PHASE_TRACK;
+            } break;
+
+            
+            case FD_PHASE_TRACK: {
+                trackFaces(grayImage, faces);
+                
+                nextPhase = Phase.FD_PHASE_TRACK; // usually continue tracking
+                
+                if (redetectTimer >= 500) { // tracking phase can last a maximum of 500ms
+                    redetectTimer -= 500;
+                    
+                    faces.clear(); // clear current faces, temporary crutch
+                    
+                    nextPhase = Phase.FD_PHASE_DETECT;
+                }
+            } break;
+
+            
+            case FD_PHASE_WAIT: {
+                nextPhase = Phase.FD_PHASE_DETECT;
+            } break;
+            }
+            
+            
+            long phaseEndTime = System.nanoTime();
+            float phaseMillis = deltaMillis(phaseStartTime, phaseEndTime);
             
             ////////////////////////
             // END FACE DETECTION //
             ////////////////////////
             
-            debugWindow.setTitle("Camera: " + cameraIndex + " - Detection/Tracking: " + detectMillis + "ms");
-            debugWindow.drawDebugRectangles(image, faces);        
-            debugWindow.showImage(image);
+            // update the debug window
+            Face[] facesCopy = makeFaceListCopy();
+            debugWindow.update(activePhase, phaseMillis, image, facesCopy);
             
-            frameCounter++;
-
+            
             // measure total busy time spent
             long endTime = System.nanoTime();
             float totalMillis = deltaMillis(startTime, endTime);
 
             // update at desired framerate
-            try {
-                float timeRemaining = (desiredFrameTime - totalMillis);
-                long sleepMillis = (long) timeRemaining;
-                int sleepNanos = (int) (1000000 * (timeRemaining - sleepMillis));
-                
-                if ((sleepMillis > 0) && (sleepNanos > 0)) {
-                    Thread.sleep(sleepMillis, sleepNanos);
-                }
-            }
-            catch (InterruptedException e1) {}
+            sleepUntilNextUpdate(totalMillis);
             
             oldTime = startTime;
             startTime = System.nanoTime();
             redetectTimer += deltaMillis(oldTime, startTime);
+            activePhase = nextPhase;
         }
         stop(); // required to let java exit properly
     }
+
+    private void sleepUntilNextUpdate(float totalMillis) {
+        try {
+            float timeRemaining = (desiredFrameTime - totalMillis);
+            long sleepMillis = (long) timeRemaining;
+            int sleepNanos = (int) (1000000 * (timeRemaining - sleepMillis));
+            
+            if ((sleepMillis > 0) && (sleepNanos > 0)) {
+                Thread.sleep(sleepMillis, sleepNanos);
+            }
+        }
+        catch (InterruptedException e1) {}
+    }
     
     /**
-     * @param t1
+     * @param tStart
      *      time value in nanoseconds
-     * @param t2
+     * @param tEnd
      *      time value in nanoseconds
      * @return 
      *      milliseconds between {@code tStart} and {@code tEnd}
      */
-    private float deltaMillis(long tStart, long tEnd) {
+    public static float deltaMillis(long tStart, long tEnd) {
         return (tEnd - tStart) / 1000000.0f;
     }
 
     /**
-     * Tracks faces by matching the data contained in {@code faceList} to a new image in {@code grayImage}. Draws yellow
-     * rectangles around their positions in {@code image}.<br>
+     * Tracks faces by matching the old data contained in {@code faceList} to a new image in {@code grayImage}.<br>
      * Make sure that {@code grayImage} is in grayscale and has a histogram equalization applied.
      * 
      * @param grayImage
@@ -192,8 +280,9 @@ public class FaceDetector implements Runnable {
      * @param faceList
      */
     private void trackFaces(Mat grayImage, List<Face> faceList) {
-
-        int rectExpand = grayImage.cols() / 18; // TODO: find good name for divisor constant, pull out as member field
+       
+        // each face rect will be expanded by this amount of pixels in each direction
+        int rectExpand = grayImage.width() / matchRectExpandDivisor;
 
         for (int i = 0; i < faceList.size(); i++) {
 
@@ -214,34 +303,31 @@ public class FaceDetector implements Runnable {
             // get best match location
             MinMaxLocResult minMax = Core.minMaxLoc(matchMatrix);
 
-            // likely match (use minVal for TM_SQDIFF_NORMED, maxVal and (1.0 - matchTolerance) for other methods)
+            // likely match (use minVal for TM_SQDIFF_NORMED, maxVal > (1.0 - matchTolerance) for other methods)
             if (minMax.minVal <= matchTolerance) {
 
                 // update face in list with new values
-                synchronized(faceList) {
-                    
-                    int newX = (int) (roi.x + minMax.minLoc.x);
-                    int newY = (int) (roi.y + minMax.minLoc.y);
-                    Rect newRect = new Rect(newX, newY, f.faceRect.width, f.faceRect.height);
-                    Mat newFaceData = grayImage.submat(newRect).clone();
-                    
-                    Face newFace = new Face(newRect, newFaceData, grayImage.width(), grayImage.height(), f.faceID);
-                    
-                    faceList.set(i, newFace);
-                }
+
+                int newX = (int) (roi.x + minMax.minLoc.x);
+                int newY = (int) (roi.y + minMax.minLoc.y);
+                Rect newRect = new Rect(newX, newY, f.faceRect.width, f.faceRect.height);
+                Mat newFaceData = grayImage.submat(newRect).clone();
+                
+                Face newFace = new Face(newRect, newFaceData, grayImage.width(), grayImage.height(), f.faceID);
+                
+                faceList.set(i, newFace);
+
             }
             else {
                 // not matched, remove face from active list
-                synchronized(faceList) {
-                    faceList.remove(i);
-                    i--;
-                }
+                faceList.remove(i);
+                i--;
             }
         }
     }
 
     /**
-     * Detects faces in {@code grayImage} and adds them to {@code faceList}.<br>
+     * Detects faces in {@code grayImage} using {@code faceCascade} and adds them to {@code faceList}.<br>
      * Make sure that {@code grayImage} is in grayscale and has a histogram equalization applied.
      * 
      * @param grayImage
@@ -256,7 +342,8 @@ public class FaceDetector implements Runnable {
         MatOfRect faceRects = new MatOfRect();
 
         // detect faces in grayscale image
-        faceCascade.detectMultiScale(grayImage, faceRects, 1.1, 3, Objdetect.CASCADE_SCALE_IMAGE, new Size(minFaceSize, minFaceSize), new Size());
+        faceCascade.detectMultiScale(grayImage, faceRects, detectScaleFactor, detectMinNeighbors, 
+                                     Objdetect.CASCADE_SCALE_IMAGE, new Size(minFaceSize,minFaceSize), new Size());
 
         Rect[] faceRectArray = faceRects.toArray();
         for (Rect rect : faceRectArray) {
@@ -267,93 +354,270 @@ public class FaceDetector implements Runnable {
             // add detected face to our list
             Face f = new Face(rect, faceMat, grayImage.width(), grayImage.height(), faceCounter++);
             
-            synchronized(faceList) {
-                faceList.add(f);
-            }
+            faceList.add(f);
         }
     }
     
     
-    public Face[] getFaces() {
+    /**
+     * Makes a copy of the current available face data.
+     */
+    private Face[] makeFaceListCopy() {
         
-        // could also make a new copy every frame and just offer that in case we have many consumers
-        synchronized(faces) {
-            Face array[] = new Face[faces.size()];
-            for (int i = 0; i < array.length; i++) {
-                array[i] = faces.get(i).clone();
-            }
-            return array;
+        // IMPORTANT: Do not make this method public, never call it from another thread.
+        //            Will cause weird race condition bugs otherwise.
+        
+        Face array[] = new Face[faces.size()];
+        for (int i = 0; i < array.length; i++) {
+            array[i] = faces.get(i).clone();
         }
+        return array;
     }
     
     public synchronized boolean isRunning() {
         return isRunning;
     }
 
+    /**
+     * Stops this thread, releases the camera. Currently <b>not</b> supported to restart thread again.
+     */
     public synchronized void stop() {
         isRunning = false;
         
+        removeDebugWindow(); // just in case someone is irresponsible!
+        
         if (vcam != null) { // can only happen if run() was never called. not sure if we want to even support that?
-            synchronized(vcam) {
+            synchronized(this) {
                 vcam.release(); // required to let java exit properly
             }
         }
     }
 
-    public int getDesiredFrameRate() {
-        return desiredFrameRate;
-    }
 
+    /**
+     * This thread will never update faster than the desired frame rate dictates.
+     */
     public void setDesiredFrameRate(int desiredFrameRate) {
         this.desiredFrameRate = desiredFrameRate;
         this.desiredFrameTime = (1000.0f / desiredFrameRate);
     }
 
-    public double getMatchTolerance() {
-        return matchTolerance;
+    /**
+     * @see #setDesiredFrameRate(int)
+     */
+    public int getDesiredFrameRate() {
+        return desiredFrameRate;
     }
 
     /**
-     * {@code matchTolerance} specifies how exact the match of a face between two frames has to be,
-     * smaller is more accurate, but may cause the program to lose tracking with fast head movements.
+     * Cycles through all available cameras.<br>
+     * Uses {@link #numCameras} to determine how many cameras to cycle through (there is currently no system in place to
+     * ask the operating system to list the currently available cameras).
+     * 
+     * @see #getNumCameras()
+     * @see #setNumCameras(int)
      */
-    public void setMatchTolerance(double matchTolerance) {
-        this.matchTolerance = matchTolerance;
-    }
-
-    public int getCameraIndex() {
-        return cameraIndex;
-    }
-
-    public void setCameraIndex(int i) {
-        synchronized(vcam) {
+    public void cycleCameras() {
+        synchronized(this) {
             vcam.release();
             
-            i = i % numCameras;
-            this.cameraIndex = i;
+            cameraIndex = (cameraIndex + 1) % numCameras;
             vcam = new VideoCapture(cameraIndex);
-            
+
             synchronized(faces) {
                 faces.clear();
             }
         }
     }
     
-    public void setDebugWindow(DebugWindow window) {
+    /**
+     * Releases the current camera and opens a new one at the given index <code>i</code>.<br>
+     * To simply cycle through all cameras, please use {@link #cycleCameras()}.
+     * 
+     * @throws IllegalArgumentException
+     *             If index is negative or greater than or equal to {@link #numCameras}.
+     * @see #getCameraIndex()
+     * @see #getNumCameras()
+     * @see #setNumCameras(int)
+     * @see #cycleCameras()
+     */
+    public void setCameraIndex(int i) {
+        
+        if (i >= numCameras || i < 0)
+            throw new IllegalArgumentException();
+        
+        synchronized(this) {
+            vcam.release();
+            
+            this.cameraIndex = i;
+            vcam = new VideoCapture(cameraIndex);
+            
+            
+            // FIXME: replace this
+            synchronized(faces) {
+                faces.clear();
+            }
+        }
+    }
+
+    /**
+     * @see #setCameraIndex
+     */
+    public int getCameraIndex() {
+        return cameraIndex;
+    }
+    
+    /**
+     * Attach a new debug window to this class. Replaces the old one. Currently does not dispose of the old window.
+     */
+    public void attachDebugWindow(DebugWindow window) {
+        if (window == null)
+            throw new NullPointerException("tried to attach a null debug window");
+        
         // TODO: maybe handle disposing of old window or remove listeners? synchronize all DebugWindow methods?
         this.debugWindow = window;
+    }
+    
+    /**
+     * Removes current debug window from the update loop. Currently does not dispose of the old window.
+     */
+    public void removeDebugWindow() {
+        // TODO: maybe handle disposing of old window or remove listeners? synchronize all DebugWindow methods?
+        debugWindow = new EmptyDebugWindow();
     }
     
     public DebugWindow getDebugWindow() {
         return debugWindow;
     }
 
-    public int getNumCameras() {
-        return numCameras;
+    public boolean hasDebugWindow() {
+        return !(debugWindow instanceof EmptyDebugWindow);
     }
-
+    
+    /**
+     * Sets the number of cameras available to the system (there is currently no system in place to ask the operating
+     * system to list the currently available cameras).
+     * 
+     * @throws IllegalArgumentException
+     *          if {@code numCameras} is less than 1
+     */
     public void setNumCameras(int numCameras) {
+        if (numCameras < 1)
+            throw new IllegalArgumentException("numCameras must be greater than 0");
+        
         this.numCameras = numCameras;
     }
 
+    /**
+     * @see #setNumCameras(int)
+     */
+    public int getNumCameras() {
+        return numCameras;
+    }
+    
+
+    /**
+     * {@link #matchTolerance} specifies how exact the match of a face between two frames has to be.
+     * Smaller is more accurate, but may cause the program to lose tracking with fast head movements.<br>
+     * Recommended values are from 0.05 to 0.2
+     */
+    public void setMatchTolerance(double matchTolerance) {        
+        this.matchTolerance = matchTolerance;
+    }
+    
+    /**
+     * @see #setMatchTolerance(double)
+     */
+    public double getMatchTolerance() {
+        return matchTolerance;
+    }
+    
+    /**
+     * Specifies how much the image is scaled down in each stage of face detection.
+     * Smaller value is more accurate, but slower.<br>
+     * Recommended values are between 1.05 and 1.6
+     * 
+     * @throws IllegalArgumentException
+     *          If {@code detectScaleFactor} is less than <b>or equal</b> to 1.0.
+     */
+    public void setDetectScaleFactor(double detectScaleFactor) {
+        if (detectScaleFactor <= 1.0)
+            throw new IllegalArgumentException("Scale factor must be greater than 1.0!");
+        
+        this.detectScaleFactor = detectScaleFactor;
+    }
+    
+    /**
+     * @see #setDetectScaleFactor(double)
+     */
+    public double getDetectScaleFactor() {
+        return detectScaleFactor;
+    }
+
+    /**
+     * Specifies how many neighboring faces should be detected in a candidate area before it is considered an actual face.
+     * Larger value avoids false positives, but may reject some actual faces. <br>
+     * Recommended values are from 2 to 6.
+     * 
+     * @throws IllegalArgumentException
+     *          if {@code detectMinNeighbors} is less than 1
+     */
+    public void setDetectMinNeighbors(int detectMinNeighbors) {
+        if (detectScaleFactor < 1)
+            throw new IllegalArgumentException("detectMinNeighbors must be greater than 0!");
+        
+        this.detectMinNeighbors = detectMinNeighbors;
+    }
+    
+    /**
+     * @see #setDetectMinNeighbors(int)
+     */
+    public int getDetectMinNeighbors() {
+        return detectMinNeighbors;
+    }
+
+    /**
+     * This influences the size of the rectangle to search for a matching face betwen two frames. Smaller value is slower,
+     * but allows for larger movement between frames. May cause strange behavior if too small.<br>
+     * Recommended values are from 32 to 8
+     * 
+     * @throws IllegalArgumentException
+     *          if {@code matchRectExpandDivisor} is less than 1
+     */
+    public void setMatchRectExpandDivisor(int matchRectExpandDivisor) {
+        if (matchRectExpandDivisor < 1)
+            throw new IllegalArgumentException("matchRectExpandDivisor must be greater than 0!");
+        
+        this.matchRectExpandDivisor = matchRectExpandDivisor;
+    }
+
+    /**
+     * @see #setMatchRectExpandDivisor(int)
+     */
+    public int getMatchRectExpandDivisor() {
+        return matchRectExpandDivisor;
+    }
+
+
+    /**
+     * Sets the minimum face size (width or height) for detection in pixels. Smaller values are faster and can 
+     * detect faces further away from the camera, but may cause more detection of random noise as faces.<br>
+     * Recommended values are between 10% and 20% of the frame height.
+     * 
+     * @throws IllegalArgumentException
+     *          
+     */
+    public void setDetectMinFaceSize(int detectMinFaceSize) {
+        if (detectMinFaceSize < 0)
+            throw new IllegalArgumentException("detectMinFaceSize must be greater than 0!");
+        
+        this.detectMinFaceSize = detectMinFaceSize;
+    }
+    
+    /**
+     * @see #setDetectMinFaceSize(int)
+     */
+    public int getDetectMinFaceSize() {
+        return detectMinFaceSize;
+    }
 }

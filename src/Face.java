@@ -3,31 +3,35 @@ import org.opencv.core.Mat;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
 
-public class Face {
+public class Face implements Cloneable {
     
     /**
      * Rectangle (usually square) containing the face.
      */
-    Rect faceRect;
+    public Rect faceRect;
     
     /**
-     * Double coordinates of {@link Face#faceRect}. <br>
+     * Normalized coordinates of {@link Face#faceRect}. <br>
      * Coordinate system is from bottom left (-1, -1) to top right (1, 1).
      */
-    Point topLeft;
-    Point bottomRight;
-    
-    Point center;
+    public Point topLeft;
+    public Point bottomRight;
     
     /**
-     * Grayscale image data for the face, for reuse in detection. (with histogram normalization applied)
+     * Center point coordinates of {@link Face#faceRect}. <br>
+     * Coordinate system is from bottom left (-1, -1) to top right (1, 1).
      */
-    Mat faceData;
+    public Point center;
+    
+    /**
+     * Grayscale image data for the face, only for reuse in detection. (with histogram normalization applied)
+     */
+    public Mat faceData;
     
     /**
      * Unique ID per face.
      */
-    int faceID;
+    public int faceID;
     
     
     public Face(Rect faceRect, Mat faceData, int imageWidth, int imageHeight, int id) {
