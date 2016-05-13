@@ -113,7 +113,7 @@ public class Imshow implements DebugWindow {
 
     public void update(FaceDetector.Phase phase, float phaseMillis, Mat image, Face[] faces) {
         if (phase == FaceDetector.Phase.FD_PHASE_WAIT) {
-            window.setTitle("Camera: " + fd.getCameraIndex() + " - Waiting for camera...");
+            window.setTitle("Camera: " + fd.getCameraIndex() + " - " + phase.toString() + ": Waiting for camera...");
         }
         else {
             drawDebugRectangles(image, faces);      

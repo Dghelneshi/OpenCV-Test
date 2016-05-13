@@ -14,10 +14,8 @@ import org.opencv.videoio.VideoCapture;
 
 /* TODO(Dgh):
  *  - FIXME: Track down bug with threads not exiting! Seems to only happen if started without debugger attached -_-
- *  - FIXME: remove all traces of synchronize(faces)! could set bool to clear faces on next loop iteration or maybe set nextPhase
+ *  - FIXME: just setting nextPhase directly in cycleCameras is not thread safe
  *  - put some of these up as git issues
- *  - implement a very simple state machine to handle different detection phases
- *   \- state machine is currently driven by logic code instead of driving the code with the state machine!
  *  - try hybrid tracking approach to give reliable IDs to faces
  *      a) use detection inside tracked rect + tolerance, then detect new faces *only outside that rect* (problems with overlap for profiles)
  *      b) track first, then detect, then try to match detected faces to tracked faces (how to handle each possible case?)
@@ -33,6 +31,7 @@ import org.opencv.videoio.VideoCapture;
  *  - more perf statistics in debug window
  *  - check program behavior with different threads ending in different orders is fine (e.g. FD thread stops before window is closed)
  *   \- window listeners need to be removed, but where?
+ *  - try to make update() run in the window's thread to minimize performance impact of UI
  *  - maybe determine tracking roi size using distance estimation + max angular velocity 
  *  - maybe provide a 3D velocity vector for faces across some time span (500ms?), handle Z-axis via size changes (math!)
  *   \- time span needs to be at least as long as tracking phase for Z-axis to work! (synchronize?)
@@ -47,6 +46,7 @@ import org.opencv.videoio.VideoCapture;
 public class FaceDetector implements Runnable {
 
     public static enum Phase {
+        FD_PHASE_INIT,
         FD_PHASE_WAIT,
         FD_PHASE_DETECT,
         FD_PHASE_TRACK,
@@ -54,7 +54,8 @@ public class FaceDetector implements Runnable {
     
     private boolean isRunning = false;
 
-    private Phase activePhase = Phase.FD_PHASE_WAIT;
+    private Phase activePhase = Phase.FD_PHASE_INIT;
+    private Phase nextPhase = Phase.FD_PHASE_DETECT;
     
     private DebugWindow debugWindow = new EmptyDebugWindow();
     
@@ -139,11 +140,6 @@ public class FaceDetector implements Runnable {
         isRunning = true;
         
         vcam = new VideoCapture(cameraIndex);
-        
-        if (vcam.isOpened() == false) {
-            // something went wrong opening the camera, just stop the thread for now
-            stop();
-        }
 
         Mat image = new Mat();
         Mat grayImage = new Mat();
@@ -160,21 +156,9 @@ public class FaceDetector implements Runnable {
                 vcam.read(image);
             }
 
-            // FIXME: this piece of code really should be removed or *at least* refactored into a method to get it out of sight
-            
-            //image = new Mat();
-            
             // wait if camera doesn't provide an image
-            if (image.empty()) {
-                activePhase = Phase.FD_PHASE_WAIT;
-                
-                debugWindow.update(activePhase, 33, image, makeFaceListCopy());                
-                
-                try {
-                    Thread.sleep(33);
-                }
-                catch (InterruptedException e) {}
-                
+            if (image.empty() || !vcam.isOpened()) {
+                handleError(image);
                 continue;
             }
             
@@ -187,11 +171,16 @@ public class FaceDetector implements Runnable {
             // convert to grayscale and equalize histogram for further processing
             Imgproc.cvtColor(image, grayImage, Imgproc.COLOR_BGR2GRAY);
             Imgproc.equalizeHist(grayImage, grayImage);
-            
-            Phase nextPhase = Phase.FD_PHASE_DETECT;
-            
-            switch(activePhase) {
 
+            switch(activePhase) {
+            
+            case FD_PHASE_INIT: {
+                faces.clear();
+                detectFaces(grayImage, faces, faceCascade, detectMinFaceSize);
+                nextPhase = Phase.FD_PHASE_TRACK;
+            } break;
+
+            
             case FD_PHASE_DETECT: {
                 detectFaces(grayImage, faces, faceCascade, detectMinFaceSize);
                 nextPhase = Phase.FD_PHASE_TRACK;
@@ -205,10 +194,7 @@ public class FaceDetector implements Runnable {
                 
                 if (redetectTimer >= 500) { // tracking phase can last a maximum of 500ms
                     redetectTimer -= 500;
-                    
-                    faces.clear(); // clear current faces, temporary crutch
-                    
-                    nextPhase = Phase.FD_PHASE_DETECT;
+                    nextPhase = Phase.FD_PHASE_INIT;
                 }
             } break;
 
@@ -246,6 +232,32 @@ public class FaceDetector implements Runnable {
         stop(); // required to let java exit properly
     }
 
+    /**
+     * Handle error case if camera doesn't provide a proper image.<br>
+     * Currently just updates debug window and thenn sleeps until the next update period.
+     */
+    private void handleError(Mat image) {
+        long phaseStartTime = System.nanoTime();
+        
+        activePhase = Phase.FD_PHASE_WAIT;
+        
+        debugWindow.update(activePhase, desiredFrameTime, image, makeFaceListCopy());
+        
+        long phaseEndTime = System.nanoTime();
+        float totalMillis = deltaMillis(phaseStartTime, phaseEndTime);
+        
+        sleepUntilNextUpdate(totalMillis);
+        
+        activePhase = nextPhase;
+    }
+
+    /**
+     * Sleeps until the next update is due according to {@link #desiredFrameTime}. <br>
+     * I.e. it will sleep for approximately {@code desiredFrameTime - totalMillis} milliseconds.
+     * 
+     * @param totalMillis
+     *          time spent in this update period so far
+     */
     private void sleepUntilNextUpdate(float totalMillis) {
         try {
             float timeRemaining = (desiredFrameTime - totalMillis);
@@ -393,7 +405,6 @@ public class FaceDetector implements Runnable {
         }
     }
 
-
     /**
      * This thread will never update faster than the desired frame rate dictates.
      */
@@ -424,9 +435,7 @@ public class FaceDetector implements Runnable {
             cameraIndex = (cameraIndex + 1) % numCameras;
             vcam = new VideoCapture(cameraIndex);
 
-            synchronized(faces) {
-                faces.clear();
-            }
+            nextPhase = Phase.FD_PHASE_INIT;
         }
     }
     
@@ -452,11 +461,7 @@ public class FaceDetector implements Runnable {
             this.cameraIndex = i;
             vcam = new VideoCapture(cameraIndex);
             
-            
-            // FIXME: replace this
-            synchronized(faces) {
-                faces.clear();
-            }
+            nextPhase = Phase.FD_PHASE_INIT;
         }
     }
 
