@@ -15,6 +15,8 @@ import org.opencv.videoio.VideoCapture;
 /* TODO(Dgh):
  *  - FIXME: Track down bug with threads not exiting! Seems to only happen if started without debugger attached -_-
  *  - FIXME: just setting nextPhase directly in cycleCameras is not thread safe
+ *  - get camera fov and image size from somewhere, don't start until we have it
+ *   \- not sure how to handle/support camera change? maybe make values possible to edit at runtime and save to config file
  *  - put some of these up as git issues
  *  - try hybrid tracking approach to give reliable IDs to faces
  *      a) use detection inside tracked rect + tolerance, then detect new faces *only outside that rect* (problems with overlap for profiles)
@@ -27,7 +29,8 @@ import org.opencv.videoio.VideoCapture;
  *  
  *  - detect faces over 2-3 frames, choose only those which are in all frames (use groupRectangles())
  *  - find a method for handling people moving out of camera fov while they are being tracked (re-detect on hitting edge?)
- *  - maybe separate Face datastructure for internal (detection) and external use, copy over relevant data each frame (or on demand?)
+ *  - maybe separate Face datastructure for internal (detection) and external use, copy over relevant data each frame
+ *   \- check every data type. do we really need doubles?
  *  - more perf statistics in debug window
  *  - check program behavior with different threads ending in different orders is fine (e.g. FD thread stops before window is closed)
  *   \- window listeners need to be removed, but where?
@@ -155,6 +158,9 @@ public class FaceDetector implements Runnable {
             synchronized(this) {
                 vcam.read(image);
             }
+            
+            // TODO: only do this once per camera init (use phases once the system is more finished)
+            FDMath.setImageSize(image.width(), image.height());
 
             // wait if camera doesn't provide an image
             if (image.empty() || !vcam.isOpened()) {
@@ -325,7 +331,7 @@ public class FaceDetector implements Runnable {
                 Rect newRect = new Rect(newX, newY, f.faceRect.width, f.faceRect.height);
                 Mat newFaceData = grayImage.submat(newRect).clone();
                 
-                Face newFace = new Face(newRect, newFaceData, grayImage.width(), grayImage.height(), f.faceID);
+                Face newFace = new Face(newRect, newFaceData, f.faceID);
                 
                 faceList.set(i, newFace);
 
@@ -364,7 +370,7 @@ public class FaceDetector implements Runnable {
             Mat faceMat = grayImage.submat(rect).clone();
 
             // add detected face to our list
-            Face f = new Face(rect, faceMat, grayImage.width(), grayImage.height(), faceCounter++);
+            Face f = new Face(rect, faceMat, faceCounter++);
             
             faceList.add(f);
         }
