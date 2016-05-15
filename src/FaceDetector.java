@@ -10,13 +10,9 @@ import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.objdetect.Objdetect;
-import org.opencv.videoio.VideoCapture;
 
 /* TODO(Dgh):
- *  - FIXME: Track down bug with threads not exiting! Seems to only happen if started without debugger attached -_-
- *  - FIXME: just setting nextPhase directly in cycleCameras is not thread safe
- *  - get camera fov and image size from somewhere, don't start until we have it
- *   \- not sure how to handle/support camera change? maybe make values possible to edit at runtime and save to config file
+ *  - get camera fov and image size from ROS Parameter Server, don't start until we have it
  *  - put some of these up as git issues
  *  - try hybrid tracking approach to give reliable IDs to faces
  *      a) use detection inside tracked rect + tolerance, then detect new faces *only outside that rect* (problems with overlap for profiles)
@@ -33,7 +29,7 @@ import org.opencv.videoio.VideoCapture;
  *   \- check every data type. do we really need doubles?
  *  - more perf statistics in debug window
  *  - check program behavior with different threads ending in different orders is fine (e.g. FD thread stops before window is closed)
- *   \- window listeners need to be removed, but where?
+ *   \- window listeners may need to be removed?
  *  - try to make update() run in the window's thread to minimize performance impact of UI
  *  - maybe determine tracking roi size using distance estimation + max angular velocity 
  *  - maybe provide a 3D velocity vector for faces across some time span (500ms?), handle Z-axis via size changes (math!)
@@ -41,6 +37,7 @@ import org.opencv.videoio.VideoCapture;
  *  - use messages from the main part of the project as signals to start/stop threads or open a debug window
  *  - ask the operating system how many cameras are available instead of manual numCameras crap!
  *  - test what happens in hard error cases like disconnecting a camera mid operation
+ *  - (later) maybe add passive "preview" phase that doesn't broadcast faces? 
  *  - fine-tune parameters according to available camera
  *  - try out more classifiers
  *  - look at possibilities for face recognition/biometrics (performance, accuracy, need face database?)
@@ -49,7 +46,7 @@ import org.opencv.videoio.VideoCapture;
 public class FaceDetector implements Runnable {
 
     public static enum Phase {
-        FD_PHASE_INIT,
+        FD_PHASE_REINIT,
         FD_PHASE_WAIT,
         FD_PHASE_DETECT,
         FD_PHASE_TRACK,
@@ -57,24 +54,24 @@ public class FaceDetector implements Runnable {
     
     private boolean isRunning = false;
 
-    private Phase activePhase = Phase.FD_PHASE_INIT;
+    private Phase activePhase = Phase.FD_PHASE_REINIT;
     private Phase nextPhase = Phase.FD_PHASE_DETECT;
     
-    private DebugWindow debugWindow = new EmptyDebugWindow();
-    
-    private VideoCapture vcam;
+    private DebugWindow debugWindow = new DummyDebugWindow();
     
     private final List<Face> faces = new ArrayList<Face>();
 
     private static int faceCounter = 0; // used to give unique IDs to faces
 
+    private Camera camera;
     private int cameraIndex = 0;
+    private int numCameras;
+    private List<Integer> cameras = new ArrayList<Integer>(); // list of camera indices
     
     /**
-     * The number of cameras available to the system (there is currently no system in place to ask the operating system
-     * to list the currently available cameras).
+     * Used by other threads to request a camera change by setting it to a valid index (>= 0).
      */
-    private int numCameras = 1;
+    private int requestedCameraIndex = -1;
 
     private int desiredFrameRate = 30;
     private float desiredFrameTime = (1000.0f / desiredFrameRate);
@@ -83,7 +80,7 @@ public class FaceDetector implements Runnable {
     //////////////////////////
     // DETECTION PARAMETERS //
     //////////////////////////
-    
+
     /**
      * Specifies how exact the match of a face between two frames has to be.
      * Smaller value is more accurate, but may cause the program to lose tracking with fast head movements.<br>
@@ -125,25 +122,33 @@ public class FaceDetector implements Runnable {
     //////////////////////////////
     
     
-    public FaceDetector() {}
+    public FaceDetector() {
+        numCameras = Camera.enumerateCameras(cameras);
+    }
     
     /**
      * @param cameraIndex
-     * @param numCameras
-     *      see {@link #numCameras}
      */
-    public FaceDetector(int cameraIndex, int numCameras) {
-        this.numCameras = numCameras;
+    public FaceDetector(int cameraIndex) {
+        this();
         this.cameraIndex = cameraIndex % numCameras;
     }
-    
-    
+
+    /**
+     * "main" function of this thread. <br>
+     * Important: None of the other methods are explicitly supported until this is called (usually via
+     * {@link java.lang.Thread#start Thread.start()}).
+     */
     public void run() {
         
-        isRunning = true;
+        synchronized (this) {
+            isRunning = true;
+            
+            // TODO: get fov from parameter server
+            // TODO: maybe put this in constructor?
+            camera = new Camera(cameras.get(cameraIndex), 90, 75);
+        }
         
-        vcam = new VideoCapture(cameraIndex);
-
         Mat image = new Mat();
         Mat grayImage = new Mat();
 
@@ -155,16 +160,29 @@ public class FaceDetector implements Runnable {
         
         while (isRunning) {
 
-            synchronized(this) {
-                vcam.read(image);
+            // another thread requested a camera change
+            if (requestedCameraIndex >= 0) {
+                this.cameraIndex = requestedCameraIndex;
+                requestedCameraIndex = -1;
+                
+                // internal camera calls like read/release need to be synchronized in case another thread calls stop()
+                synchronized (this) { 
+                    camera.release();
+                    camera = new Camera(cameras.get(cameraIndex), 90, 75);
+                }
+                image = new Mat();
+                redetectTimer = 0;
+                activePhase = Phase.FD_PHASE_REINIT;
             }
             
-            // TODO: only do this once per camera init (use phases once the system is more finished)
-            FDMath.setImageSize(image.width(), image.height());
-
+            boolean readSuccess;
+            synchronized (this) {
+                readSuccess = camera.read(image);
+            }
+            
             // wait if camera doesn't provide an image
-            if (image.empty() || !vcam.isOpened()) {
-                handleError(image);
+            if (!readSuccess || image.empty()) {
+                executeWaitPhase(image);
                 continue;
             }
             
@@ -180,7 +198,7 @@ public class FaceDetector implements Runnable {
 
             switch(activePhase) {
             
-            case FD_PHASE_INIT: {
+            case FD_PHASE_REINIT: {
                 faces.clear();
                 detectFaces(grayImage, faces, faceCascade, detectMinFaceSize);
                 nextPhase = Phase.FD_PHASE_TRACK;
@@ -199,15 +217,14 @@ public class FaceDetector implements Runnable {
                 nextPhase = Phase.FD_PHASE_TRACK; // usually continue tracking
                 
                 if (redetectTimer >= 500) { // tracking phase can last a maximum of 500ms
-                    redetectTimer -= 500;
-                    nextPhase = Phase.FD_PHASE_INIT;
+                    redetectTimer = 0;
+                    nextPhase = Phase.FD_PHASE_REINIT;
                 }
             } break;
-
             
-            case FD_PHASE_WAIT: {
-                nextPhase = Phase.FD_PHASE_DETECT;
-            } break;
+            default:
+                assert(false);
+                break;          
             }
             
             
@@ -235,14 +252,13 @@ public class FaceDetector implements Runnable {
             redetectTimer += deltaMillis(oldTime, startTime);
             activePhase = nextPhase;
         }
-        stop(); // required to let java exit properly
     }
 
     /**
      * Handle error case if camera doesn't provide a proper image.<br>
      * Currently just updates debug window and thenn sleeps until the next update period.
      */
-    private void handleError(Mat image) {
+    private void executeWaitPhase(Mat image) {
         long phaseStartTime = System.nanoTime();
         
         activePhase = Phase.FD_PHASE_WAIT;
@@ -254,7 +270,7 @@ public class FaceDetector implements Runnable {
         
         sleepUntilNextUpdate(totalMillis);
         
-        activePhase = nextPhase;
+        activePhase = Phase.FD_PHASE_REINIT;
     }
 
     /**
@@ -331,7 +347,7 @@ public class FaceDetector implements Runnable {
                 Rect newRect = new Rect(newX, newY, f.faceRect.width, f.faceRect.height);
                 Mat newFaceData = grayImage.submat(newRect).clone();
                 
-                Face newFace = new Face(newRect, newFaceData, f.faceID);
+                Face newFace = new Face(newRect, newFaceData, f.faceID, camera);
                 
                 faceList.set(i, newFace);
 
@@ -370,7 +386,7 @@ public class FaceDetector implements Runnable {
             Mat faceMat = grayImage.submat(rect).clone();
 
             // add detected face to our list
-            Face f = new Face(rect, faceMat, faceCounter++);
+            Face f = new Face(rect, faceMat, faceCounter++, camera);
             
             faceList.add(f);
         }
@@ -397,17 +413,16 @@ public class FaceDetector implements Runnable {
     }
 
     /**
-     * Stops this thread, releases the camera. Currently <b>not</b> supported to restart thread again.
+     * Stops this thread, releases the camera. Currently <b>not</b> supported to restart thread again.<br>
+     * Do not call this more than once, ever. May cause infinite loop in VideoCapture.release() for some reason.
      */
     public synchronized void stop() {
         isRunning = false;
         
         removeDebugWindow(); // just in case someone is irresponsible!
         
-        if (vcam != null) { // can only happen if run() was never called. not sure if we want to even support that?
-            synchronized(this) {
-                vcam.release(); // required to let java exit properly
-            }
+        if (camera != null) { // can only happen if run() was never called. not sure if we want to even support that?
+            camera.release(); // required to let java exit properly
         }
     }
 
@@ -427,52 +442,73 @@ public class FaceDetector implements Runnable {
     }
 
     /**
-     * Cycles through all available cameras.<br>
-     * Uses {@link #numCameras} to determine how many cameras to cycle through (there is currently no system in place to
-     * ask the operating system to list the currently available cameras).
-     * 
-     * @see #getNumCameras()
-     * @see #setNumCameras(int)
+     * Cycles through all available cameras.
      */
     public void cycleCameras() {
-        synchronized(this) {
-            vcam.release();
-            
-            cameraIndex = (cameraIndex + 1) % numCameras;
-            vcam = new VideoCapture(cameraIndex);
-
-            nextPhase = Phase.FD_PHASE_INIT;
-        }
+        requestCameraChange((cameraIndex + 1) % numCameras);
     }
     
     /**
-     * Releases the current camera and opens a new one at the given index <code>i</code>.<br>
-     * To simply cycle through all cameras, please use {@link #cycleCameras()}.
+     * Releases the current camera and opens a new one at the given index {@code i}. Will be executed on next update cycle.<br>
+     * 
+     * To simply cycle through all available cameras, use {@link #cycleCameras()}.
      * 
      * @throws IllegalArgumentException
-     *             If index is negative or greater than or equal to {@link #numCameras}.
+     *             if index is negative or greater than the number of available cameras
      * @see #getCameraIndex()
-     * @see #getNumCameras()
-     * @see #setNumCameras(int)
      * @see #cycleCameras()
+     * @see #getNumCameras()
      */
-    public void setCameraIndex(int i) {
-        
-        if (i >= numCameras || i < 0)
-            throw new IllegalArgumentException();
-        
-        synchronized(this) {
-            vcam.release();
+    public void requestCameraChange(int index) {
+
+        if (index < 0 || index > numCameras)
+            throw new IllegalArgumentException("tried to set camera index to " + index + " (numCameras is " + numCameras + ")");
+
+        requestedCameraIndex = index;
+    }
+    
+    /**
+     * Gets number of available cameras.
+     * @see #rescanCameras()
+     */
+    public int getNumCameras() {
+        return numCameras;
+    }
+    
+    /**
+     * Scans to find all currently available cameras. If it cannot find the old camera again, it will open the first one
+     * it found.<br>
+     * Do not call this often, as it can take a while (expect >0.5s).
+     * 
+     * @return the number of cameras
+     */
+    public synchronized int rescanCameras() {
+
+        numCameras = Camera.enumerateCameras(cameras);
+
+        // find old camera in new list
+        boolean found = false;
+        for (int cameraIndex = 0; cameraIndex < cameras.size(); cameraIndex++) {
+
+            int realIndex = cameras.get(cameraIndex); // get actual index used by VideoCapture
             
-            this.cameraIndex = i;
-            vcam = new VideoCapture(cameraIndex);
-            
-            nextPhase = Phase.FD_PHASE_INIT;
+            if (realIndex == camera.getRealIndex()) {
+                
+                requestCameraChange(cameraIndex);
+                found = true;
+                break;
+            }
         }
+        if (!found) { // didn't find old camera for some reason, just open the first one
+            assert(false) : "DEBUG: Old camera not in rescan!";
+            requestCameraChange(0);
+        }
+        
+        return numCameras;
     }
 
     /**
-     * @see #setCameraIndex
+     * @see #requestCameraChange(int)
      */
     public int getCameraIndex() {
         return cameraIndex;
@@ -485,7 +521,6 @@ public class FaceDetector implements Runnable {
         if (window == null)
             throw new NullPointerException("tried to attach a null debug window");
         
-        // TODO: maybe handle disposing of old window or remove listeners? synchronize all DebugWindow methods?
         this.debugWindow = window;
     }
     
@@ -493,8 +528,7 @@ public class FaceDetector implements Runnable {
      * Removes current debug window from the update loop. Currently does not dispose of the old window.
      */
     public void removeDebugWindow() {
-        // TODO: maybe handle disposing of old window or remove listeners? synchronize all DebugWindow methods?
-        debugWindow = new EmptyDebugWindow();
+        debugWindow = new DummyDebugWindow();
     }
     
     public DebugWindow getDebugWindow() {
@@ -502,31 +536,9 @@ public class FaceDetector implements Runnable {
     }
 
     public boolean hasDebugWindow() {
-        return !(debugWindow instanceof EmptyDebugWindow);
+        return !(debugWindow instanceof DummyDebugWindow);
     }
     
-    /**
-     * Sets the number of cameras available to the system (there is currently no system in place to ask the operating
-     * system to list the currently available cameras).
-     * 
-     * @throws IllegalArgumentException
-     *          if {@code numCameras} is less than 1
-     */
-    public void setNumCameras(int numCameras) {
-        if (numCameras < 1)
-            throw new IllegalArgumentException("numCameras must be greater than 0");
-        
-        this.numCameras = numCameras;
-    }
-
-    /**
-     * @see #setNumCameras(int)
-     */
-    public int getNumCameras() {
-        return numCameras;
-    }
-    
-
     /**
      * {@link #matchTolerance} specifies how exact the match of a face between two frames has to be.
      * Smaller is more accurate, but may cause the program to lose tracking with fast head movements.<br>

@@ -44,33 +44,35 @@ public class Face implements Cloneable {
     public int faceID;
     
     
-    public Face(Rect faceRect, Mat faceData, int id) {
+    public Face(Rect faceRect, Mat faceData, int id, Camera cam) {
         this.faceRect = faceRect;
         this.faceData = faceData;
         this.faceID = id;
 
-        topLeft = FDMath.normalizeCoord(faceRect.tl());
-        bottomRight = FDMath.normalizeCoord(faceRect.br());
+        topLeft = cam.normalizeCoord(faceRect.tl());
+        bottomRight = cam.normalizeCoord(faceRect.br());
 
         center = new Point((topLeft.x + bottomRight.x) * 0.5, (topLeft.y + bottomRight.y) * 0.5);
-        hAngle = FDMath.hAngle(center.x);
-        vAngle = FDMath.hAngle(center.y);
-    }
-
-    private Face(Rect faceRect, Mat faceData, Point topLeft, Point bottomRight, int id) {
-        this.faceRect = faceRect;
-        this.faceData = faceData;
-        this.faceID = id;
-        this.topLeft = topLeft;
-        this.bottomRight = bottomRight;
-        
-        center = new Point((topLeft.x + bottomRight.x) * 0.5, (topLeft.y + bottomRight.y) * 0.5);
-        hAngle = FDMath.hAngle(center.x);
-        vAngle = FDMath.hAngle(center.y);
+        hAngle = cam.hAngle(center.x);
+        vAngle = cam.hAngle(center.y);
     }
     
-    /** Important: Does not clone {@code faceData} (only shallow copy) to save some microseconds! */
+    /**
+     * Important: Does not clone {@code faceData} (only shallow copy) to save some microseconds!
+     */
+    @Override
     public Face clone() {
-        return new Face(faceRect.clone(), faceData, topLeft.clone(), bottomRight.clone(), faceID);
+        try {
+            Face result = (Face) super.clone();
+            result.faceRect = faceRect.clone();
+            result.topLeft = topLeft.clone();
+            result.bottomRight = bottomRight.clone();
+            result.center = center.clone();
+            return result;
+        }
+        catch (CloneNotSupportedException e) {
+            assert(false);  // unreachable code
+            return null;
+        } 
     }
 }

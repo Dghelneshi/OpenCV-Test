@@ -5,9 +5,9 @@ import org.opencv.core.Mat;
 /**
  * {@link DebugWindow} that does nothing when its methods are called.
  */
-public final class EmptyDebugWindow implements DebugWindow {
+public final class DummyDebugWindow implements DebugWindow {
     
-    public EmptyDebugWindow() {}
+    public DummyDebugWindow() {}
 
 
     @Override
