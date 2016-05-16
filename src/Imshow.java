@@ -98,16 +98,20 @@ public class Imshow implements DebugWindow {
         
         return bufferedImage;
     }
+    
+    private static final Scalar white = new Scalar(255, 255, 255, 255);
+    private static final Scalar red = new Scalar(0, 0, 255, 255);
+    private static final Scalar green = new Scalar(0, 255, 0, 255);
 
     public void drawDebugRectangles(Mat image, Face[] faceList) {
         for (Face face : faceList) {
             Point faceTl = face.faceRect.tl();
             Point faceBr = face.faceRect.br();
-            Imgproc.rectangle(image, faceTl, faceBr, new Scalar(0, 255, 0, 255), 1);
+            Imgproc.rectangle(image, faceTl, faceBr, (face.retainedCount > 0) ? red : green, 1);
             
             Point above = new Point((faceTl.x + faceBr.x) * 0.5, faceTl.y - 10);
             
-            Imgproc.putText(image, Integer.toString(face.faceID), above, 3, 0.5, new Scalar(255, 255, 255, 255), 1);
+            Imgproc.putText(image, Integer.toString(face.faceID), above, 3, 0.5, white, 1);
         }
     }
 
@@ -127,15 +131,15 @@ public class Imshow implements DebugWindow {
     
     private float[] trackMillis = new float[16]; // Note: size must be a power of 2 for now
     private int trackMillisIndex = 0;
-    private float[] detectMillis = new float[8]; // Note: size must be a power of 2 for now
-    private int detectMillisIndex = 0;
+    private float[] redetectMillis = new float[8]; // Note: size must be a power of 2 for now
+    private int redetectMillisIndex = 0;
     
     public void addPerfStat(FaceDetector.Phase phase, float millis) {
         
         switch (phase) {
-        case FD_PHASE_DETECT:
-            detectMillis[detectMillisIndex & (detectMillis.length - 1)] = millis;
-            detectMillisIndex++;
+        case FD_PHASE_REDETECT:
+            redetectMillis[redetectMillisIndex & (redetectMillis.length - 1)] = millis;
+            redetectMillisIndex++;
             break;
         case FD_PHASE_TRACK:
             trackMillis[trackMillisIndex & (trackMillis.length - 1)] = millis;
@@ -153,17 +157,17 @@ public class Imshow implements DebugWindow {
             }
             avgTrackMillis /= trackMillis.length;
             
-            //System.out.println("Avg Track: " + avgTrackMillis);
+            System.out.printf("avg track:    %6.2f\n", avgTrackMillis);
         }
-        if (detectMillisIndex > detectMillis.length) {
+        if (redetectMillisIndex > redetectMillis.length) {
             
-            float avgDetectMillis = 0;
-            for (float f : detectMillis) {
-                avgDetectMillis += f;
+            float avgRedetectMillis = 0;
+            for (float f : redetectMillis) {
+                avgRedetectMillis += f;
             }
-            avgDetectMillis /= detectMillis.length;
+            avgRedetectMillis /= redetectMillis.length;
             
-            //System.out.println("Avg Detect: " + avgDetectMillis);
+            System.out.printf("avg redetect: %6.2f\n", avgRedetectMillis);
         }
     }
 }

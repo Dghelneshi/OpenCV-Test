@@ -43,11 +43,14 @@ public class Face implements Cloneable {
      */
     public int faceID;
     
+    public int retainedCount;
+    
     
     public Face(Rect faceRect, Mat faceData, int id, Camera cam) {
         this.faceRect = faceRect;
         this.faceData = faceData;
         this.faceID = id;
+        this.retainedCount = 0;
 
         topLeft = cam.normalizeCoord(faceRect.tl());
         bottomRight = cam.normalizeCoord(faceRect.br());
@@ -56,6 +59,12 @@ public class Face implements Cloneable {
         hAngle = cam.hAngle(center.x);
         vAngle = cam.hAngle(center.y);
     }
+
+    public Face(Rect faceRect, Mat faceData, int id, Camera cam, int retainedCount) {
+        this(faceRect, faceData, id, cam);
+        this.retainedCount = retainedCount;
+    }
+    
     
     /**
      * Important: Does not clone {@code faceData} (only shallow copy) to save some microseconds!
