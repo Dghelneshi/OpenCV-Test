@@ -106,7 +106,7 @@ public class FaceDetector implements Runnable {
     private int maxTrackingDuration = 500;
     
     /**
-     * Specifies how much the image is scaled in each stage of face detection.
+     * Specifies how much the image is scaled in each stage of face detection.<br>
      * Smaller value is more accurate, but slower. <b>Must be greater than 1.0</b> <br>
      * Recommended values are between 1.05 and 1.6
      */
@@ -251,7 +251,7 @@ public class FaceDetector implements Runnable {
                 
                 // we're integrating over a fairly long period of time, so tolerance is large
                 // BUT: can lead to faces "transferring" to another person
-                double tolerance = 0.1;
+                double tolerance = 0.1; // TODO: make parameter
                 
                 // compare new positions of old faces and all detected faces. merge those that match within tolerance.
                 for (Face oldFace : oldFaces) {
@@ -270,7 +270,7 @@ public class FaceDetector implements Runnable {
                     }
                     
                     // we couldn't match the old face to a new one. retain it once, in case it reappears next cycle.
-                    if (!found && oldFace.retainedCount < 1) {
+                    if (!found && oldFace.retainedCount < 1) { // TODO: make parameter?
                         oldFace.retainedCount++;
                         faces.add(oldFace);
                     }
@@ -620,7 +620,7 @@ public class FaceDetector implements Runnable {
     }
     
     /**
-     * {@link #matchTolerance} specifies how exact the match of a face between two frames has to be.
+     * {@link #matchTolerance} specifies how exact the match of a face between two frames has to be.<br>
      * Smaller is more accurate, but may cause the program to lose tracking with fast head movements.<br>
      * Recommended values are from 0.05 to 0.2
      */
@@ -636,7 +636,7 @@ public class FaceDetector implements Runnable {
     }
     
     /**
-     * Specifies how much the image is scaled down in each stage of face detection.
+     * Specifies how much the image is scaled down in each stage of face detection.<br>
      * Smaller value is more accurate, but slower.<br>
      * Recommended values are between 1.05 and 1.6
      * 
@@ -658,9 +658,9 @@ public class FaceDetector implements Runnable {
     }
 
     /**
-     * Specifies how many neighboring faces should be detected in a candidate area before it is considered an actual face.
-     * Larger value avoids false positives, but may reject some actual faces. <br>
-     * Recommended values are from 2 to 6.
+     * Specifies how many neighboring faces should be detected in a candidate area before it is considered an actual face.<br>
+     * Larger values avoid false positives, but may reject some actual faces.<br>
+     * Recommended values are from 2 to 6
      * 
      * @throws IllegalArgumentException
      *          if {@code detectMinNeighbors} is less than 1
@@ -680,12 +680,12 @@ public class FaceDetector implements Runnable {
     }
 
     /**
-     * This influences the size of the rectangle to search for a matching face betwen two frames. Smaller value is slower,
-     * but allows for larger movement between frames. May cause strange behavior if too small.<br>
+     * This influences the size of the rectangle to search for a matching face betwen two frames.<br>
+     * Smaller value is slower, but allows for larger movement between frames. May cause strange behavior if too small.<br>
      * Recommended values are from 32 to 8
      * 
      * @throws IllegalArgumentException
-     *          if {@code matchRectExpandDivisor} is less than 1
+     *             if {@code matchRectExpandDivisor} is less than 1
      */
     public void setMatchRectExpandDivisor(int matchRectExpandDivisor) {
         if (matchRectExpandDivisor < 1)
@@ -703,12 +703,13 @@ public class FaceDetector implements Runnable {
 
 
     /**
-     * Sets the minimum face size (width or height) for detection in pixels. Smaller values are faster and can 
-     * detect faces further away from the camera, but may cause more detection of random noise as faces.<br>
-     * Recommended values are between 10% and 20% of the frame height.
+     * Specifies the minimum face size (width or height) for detection in pixels. <br>
+     * Smaller values are slower, but can detect faces further away from the camera. However, this may also cause more
+     * detection of random noise as faces.<br>
+     * Recommended values are between 10% and 25% of the frame height.
      * 
      * @throws IllegalArgumentException
-     *          
+     *          if argument is negative
      */
     public void setDetectMinFaceSize(int detectMinFaceSize) {
         if (detectMinFaceSize < 0)
@@ -722,5 +723,22 @@ public class FaceDetector implements Runnable {
      */
     public int getDetectMinFaceSize() {
         return detectMinFaceSize;
+    }
+
+    /**
+     * Specifies how long the tracking/matching phase should last before redetecting faces "properly" (in milliseconds).<br>
+     * Smaller value is slightly slower due to more redetection phases, but can reduce the time where faces are
+     * temporarily transplanted onto obvious non-face objects. Larger values can help reducing "lost" faces.<br>
+     * Recommended values are from 250 to 500.
+     */
+    public void setMaxTrackingDuration(int maxTrackingDuration) {
+        this.maxTrackingDuration = maxTrackingDuration;
+    }
+    
+    /**
+     * @see #setMaxTrackingDuration(int)
+     */
+    public int getMaxTrackingDuration() {
+        return maxTrackingDuration;
     }
 }
