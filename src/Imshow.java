@@ -11,6 +11,7 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
+import java.util.ArrayList;
 
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
@@ -103,7 +104,7 @@ public class Imshow implements DebugWindow {
     private static final Scalar red = new Scalar(0, 0, 255, 255);
     private static final Scalar green = new Scalar(0, 255, 0, 255);
 
-    public void drawDebugRectangles(Mat image, Face[] faceList) {
+    public void drawDebugRectangles(Mat image, ArrayList<Face> faceList) {
         for (Face face : faceList) {
             Point faceTl = face.faceRect.tl();
             Point faceBr = face.faceRect.br();
@@ -115,7 +116,7 @@ public class Imshow implements DebugWindow {
         }
     }
 
-    public void update(FaceDetector.Phase phase, float phaseMillis, Mat image, Face[] faces) {
+    public void update(FaceDetector.Phase phase, float phaseMillis, Mat image, ArrayList<Face> faces) {
         if (phase == FaceDetector.Phase.FD_PHASE_WAIT) {
             window.setTitle("Camera: " + fd.getCameraIndex() + " - " + phase.toString() + ": Waiting for camera...");
         }
@@ -157,7 +158,7 @@ public class Imshow implements DebugWindow {
             }
             avgTrackMillis /= trackMillis.length;
             
-            System.out.printf("avg track:    %6.2f\n", avgTrackMillis);
+//            System.out.printf("avg track:    %6.2f\n", avgTrackMillis);
         }
         if (redetectMillisIndex > redetectMillis.length) {
             
@@ -167,7 +168,7 @@ public class Imshow implements DebugWindow {
             }
             avgRedetectMillis /= redetectMillis.length;
             
-            System.out.printf("avg redetect: %6.2f\n", avgRedetectMillis);
+//            System.out.printf("avg redetect: %6.2f\n", avgRedetectMillis);
         }
     }
 }

@@ -43,6 +43,9 @@ public class Face implements Cloneable {
      */
     public int faceID;
     
+    /**
+     * Times this face was retained through a frame even though it wasn't detected. Useful for stability of face IDs.
+     */
     public int retainedCount;
     
     
@@ -57,7 +60,7 @@ public class Face implements Cloneable {
 
         center = new Point((topLeft.x + bottomRight.x) * 0.5, (topLeft.y + bottomRight.y) * 0.5);
         hAngle = cam.hAngle(center.x);
-        vAngle = cam.hAngle(center.y);
+        vAngle = cam.vAngle(center.y);
     }
 
     public Face(Rect faceRect, Mat faceData, int id, Camera cam, int retainedCount) {
@@ -80,8 +83,7 @@ public class Face implements Cloneable {
             return result;
         }
         catch (CloneNotSupportedException e) {
-            assert(false);  // unreachable code
-            return null;
+            throw new AssertionError("Unreachable statement");
         } 
     }
 }

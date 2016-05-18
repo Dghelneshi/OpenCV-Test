@@ -1,4 +1,6 @@
 
+import java.util.ArrayList;
+
 import org.opencv.core.Mat;
 
 
@@ -7,6 +9,6 @@ import org.opencv.core.Mat;
  */
 public interface DebugWindow {
     
-    public void update(FaceDetector.Phase phase, float phaseMillis, Mat image, Face[] faces);
+    public void update(FaceDetector.Phase phase, float phaseMillis, Mat image, ArrayList<Face> faces);
     
 }

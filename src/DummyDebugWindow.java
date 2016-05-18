@@ -1,3 +1,5 @@
+import java.util.ArrayList;
+
 import org.opencv.core.Mat;
 
 
@@ -11,7 +13,7 @@ public final class DummyDebugWindow implements DebugWindow {
 
 
     @Override
-    public void update(FaceDetector.Phase phase, float phaseMillis, Mat image, Face[] faces) {
+    public void update(FaceDetector.Phase phase, float phaseMillis, Mat image, ArrayList<Face> faces) {
         // do nothing  
     }
 
