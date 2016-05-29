@@ -1,7 +1,5 @@
 import java.awt.Color;
-import java.awt.Dimension;
 import java.awt.GridLayout;
-import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
@@ -16,8 +14,10 @@ import org.opencv.core.Mat;
 
 public class DebugingWindow extends JFrame implements ActionListener, DebugWindow {
 
+	 
+//	FaceDetector fd;
 	FaceDetector fd = new FaceDetector();
-
+	
 	private double matchTolerance;
 	private int matchRectExpandDivisor;
 	private int maxTrackingDuration;
