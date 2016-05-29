@@ -73,7 +73,18 @@ public class Imshow implements DebugWindow {
                 // click anywhere to change camera (e.g. from webcam to virtual camera, for testing)
                 fd.cycleCameras();
             }
+
         });
+
+        // test code for camera fov measurement
+//        label.addMouseMotionListener(new MouseAdapter() {
+//            public void mouseMoved(MouseEvent e) {
+//                int x = e.getX();
+//                int y = e.getY();
+//
+//                window.setTitle("x: " + x +  " | y: " + y);
+//            }
+//        });
     }
 
     public void showImage(Mat img) {
@@ -158,7 +169,7 @@ public class Imshow implements DebugWindow {
             }
             avgTrackMillis /= trackMillis.length;
             
-//            System.out.printf("avg track:    %6.2f\n", avgTrackMillis);
+            System.out.printf("avg track:    %6.2f\n", avgTrackMillis);
         }
         if (redetectMillisIndex > redetectMillis.length) {
             
@@ -168,7 +179,7 @@ public class Imshow implements DebugWindow {
             }
             avgRedetectMillis /= redetectMillis.length;
             
-//            System.out.printf("avg redetect: %6.2f\n", avgRedetectMillis);
+            System.out.printf("avg redetect: %6.2f\n", avgRedetectMillis);
         }
     }
 }

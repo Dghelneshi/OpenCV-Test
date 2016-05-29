@@ -12,6 +12,7 @@ import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.objdetect.Objdetect;
+import org.opencv.videoio.Videoio;
 
 /* TODO(Dgh):
  *  - get camera fov and image size from ROS Parameter Server, don't start until we have it
@@ -24,8 +25,8 @@ import org.opencv.objdetect.Objdetect;
  *      d) detect first, then match with last known faces (center position and/or template match)
  *      e) always track in addition to detect, only remove tracking completely if rect touches image border
  *       \- need to test cases where tracking *should* be lost, maybe decay maximum valid diff over time?
- *       \- possibly too complicated to account for every edge case with this method 
- *  
+ *       \- possibly too complicated to account for every edge case with this method
+ *             
  *  - maybe detect faces over 2-3 frames, choose only those which are in all frames
  *  - find a method for handling people moving out of camera fov while they are being tracked (re-detect on hitting edge?)
  *  - maybe separate Face datastructure for internal (detection) and external use, copy over relevant data each frame
@@ -42,11 +43,18 @@ import org.opencv.objdetect.Objdetect;
  *  - fine-tune parameters according to available camera
  *  - try out more classifiers
  *  - look at possibilities for face recognition/biometrics (performance, accuracy, need face database?)
+ *  
+ *  --- (C++ Rewrite) ---
+ *  - re-examine multi-threading
+ *      a) re-get (ROS) every parameter on every loop iteration? probably way too slow
+ *      b) override bool. have other thread check parameters, set override if change detected.
+ *  - re-examine debug window. we don't really need this interface abstraction stuff anymore since it's just one function
+ *  
  */
 
 public class FaceDetector implements Runnable {
 
-    public static enum Phase {
+    public enum Phase {
         FD_PHASE_INIT,
         FD_PHASE_WAIT,
         FD_PHASE_DETECT,
@@ -61,14 +69,14 @@ public class FaceDetector implements Runnable {
     
     private DebugWindow debugWindow = new DummyDebugWindow();
     
-    private final ArrayList<Face> faces = new ArrayList<Face>();
+    private final ArrayList<Face> faces = new ArrayList<>();
 
     private static int faceCounter = 0; // used to give unique IDs to faces
 
     private Camera camera;
     private int cameraIndex = 0;
     private int numCameras;
-    private List<Integer> cameras = new ArrayList<Integer>(); // list of camera indices
+    private List<Integer> cameras = new ArrayList<>(); // list of camera indices
     
     /**
      * Used by other threads to request a camera change by setting it to a valid index (>= 0).
@@ -123,9 +131,9 @@ public class FaceDetector implements Runnable {
      * Specifies the minimum face size (width or height) for detection in pixels. <br>
      * Smaller values are slower, but can detect faces further away from the camera. However, this may also cause more
      * detection of random noise as faces.<br>
-     * Recommended values are between 10% and 25% of the frame height.
+     * Recommended values are between 5% and 25% of the frame height (depending on camera fov).
      */
-    private int detectMinFaceSize = 64;
+    private int detectMinFaceSize = 32;
     
     
     
@@ -139,7 +147,7 @@ public class FaceDetector implements Runnable {
     }
     
     /**
-     * @param cameraIndex
+     * @param cameraIndex the camera index
      */
     public FaceDetector(int cameraIndex) {
         this();
@@ -159,6 +167,8 @@ public class FaceDetector implements Runnable {
             // TODO: get fov from parameter server
             // TODO: maybe put this in constructor?
             camera = new Camera(cameras.get(cameraIndex), 90, 75);
+            camera.set(Videoio.CAP_PROP_FRAME_WIDTH, 640);
+            camera.set(Videoio.CAP_PROP_FRAME_HEIGHT, 480);           
         }
         
         Mat image = new Mat();
@@ -174,6 +184,7 @@ public class FaceDetector implements Runnable {
 
             // another thread requested a camera change
             if (requestedCameraIndex >= 0) {
+                
                 this.cameraIndex = requestedCameraIndex;
                 requestedCameraIndex = -1;
                 
@@ -182,11 +193,12 @@ public class FaceDetector implements Runnable {
                     camera.release();
                     camera = new Camera(cameras.get(cameraIndex), 90, 75);
                 }
+                
                 image = new Mat();
                 redetectTimer = 0;
                 activePhase = Phase.FD_PHASE_INIT;
             }
-            
+
             boolean readSuccess;
             synchronized (this) {
                 readSuccess = camera.read(image);
@@ -228,7 +240,7 @@ public class FaceDetector implements Runnable {
                 
                 nextPhase = Phase.FD_PHASE_TRACK; // usually continue tracking
                 
-                if (redetectTimer >= maxTrackingDuration) { // tracking phase can last a maximum of 500ms
+                if (redetectTimer >= maxTrackingDuration) { // tracking phase can last a maximum of maxTrackingDuration
                     redetectTimer = 0;
                     nextPhase = Phase.FD_PHASE_REDETECT;
                 }
@@ -293,25 +305,22 @@ public class FaceDetector implements Runnable {
             ////////////////////////
             
             // update the debug window (in the window thread [AWT Event Dispatcher])
+            // have to copy everything due to race conditions
             final ArrayList<Face> facesCopy = makeFaceListCopy();
-            final Mat imageCopy = image.clone(); // could skip the copy if we guarantee it won't be modified by update() 
+            final Mat imageCopy = image.clone();
             
-            SwingUtilities.invokeLater(new Runnable() {
-                public void run() {
-                    debugWindow.update(activePhase, phaseMillis, imageCopy, facesCopy);
-                }
-            });
+            SwingUtilities.invokeLater(() -> debugWindow.update(activePhase, phaseMillis, imageCopy, facesCopy));
             
             // measure total busy time spent
             long endTime = System.nanoTime();
             float totalMillis = deltaMillis(startTime, endTime);
 
             // debug perf statistics (we could show these in debug window instead)
-//            System.out.println("---" + activePhase);
-//            System.out.printf("read time:    %6.2f\n", deltaMillis(startTime, phaseStartTime)); // includes some waiting inside opencv api
-//            System.out.printf("phase time:   %6.2f\n", phaseMillis);
-//            System.out.printf("update time:  %6.2f\n", deltaMillis(phaseEndTime, endTime));
-//            System.out.printf("time left:    %6.2f\n", (desiredFrameTime - totalMillis));
+            System.out.println("---" + activePhase);
+            System.out.printf("read time:    %6.2f\n", deltaMillis(startTime, phaseStartTime)); // includes some waiting inside opencv api
+            System.out.printf("phase time:   %6.2f\n", phaseMillis);
+            System.out.printf("update time:  %6.2f\n", deltaMillis(phaseEndTime, endTime));
+            System.out.printf("time left:    %6.2f\n", (desiredFrameTime - totalMillis));
             
             // update at desired framerate
             sleepUntilNextUpdate(totalMillis);
@@ -329,23 +338,23 @@ public class FaceDetector implements Runnable {
      */
     private void executeWaitPhase(Mat image) {
         long phaseStartTime = System.nanoTime();
-        
+
         activePhase = Phase.FD_PHASE_WAIT;
-        
+
         debugWindow.update(activePhase, desiredFrameTime, image, makeFaceListCopy());
-        
+
         long phaseEndTime = System.nanoTime();
         float totalMillis = deltaMillis(phaseStartTime, phaseEndTime);
-        
+
         sleepUntilNextUpdate(totalMillis);
-        
+
         activePhase = Phase.FD_PHASE_INIT;
     }
 
     /**
      * Sleeps until the next update is due according to {@link #desiredFrameTime}. <br>
      * I.e. it will sleep for approximately {@code desiredFrameTime - totalMillis} milliseconds.
-     * 
+     *
      * @param totalMillis
      *          time spent in this update period so far
      */
@@ -354,7 +363,7 @@ public class FaceDetector implements Runnable {
             float timeRemaining = (desiredFrameTime - totalMillis);
             long sleepMillis = (long) timeRemaining;
             int sleepNanos = (int) (1000000 * (timeRemaining - sleepMillis));
-            
+
             if ((sleepMillis > 0) && (sleepNanos > 0)) {
                 Thread.sleep(sleepMillis, sleepNanos);
             }
@@ -363,7 +372,7 @@ public class FaceDetector implements Runnable {
             System.out.println("DEBUG: Sleep was interrupted!");
         }
     }
-    
+
     /**
      * @param tStart
      *      time value in nanoseconds
@@ -383,6 +392,7 @@ public class FaceDetector implements Runnable {
      * @param grayImage
      *            {@code image} converted to grayscale, with histogram equalization applied
      * @param faceList
+     *            the face list
      */
     private void trackFaces(Mat grayImage, List<Face> faceList) {
        
@@ -440,8 +450,8 @@ public class FaceDetector implements Runnable {
      * 
      * @param grayImage
      *            image converted to grayscale, with histogram equalization applied
-     * @param faceList
-     * @param faceCascade
+     * @param faceList the face list
+     * @param faceCascade the face cascade classifer
      * @param minFaceSize
      *            faces cannot be smaller than this size in pixels (width or height)
      */
@@ -480,7 +490,7 @@ public class FaceDetector implements Runnable {
         // IMPORTANT: Do not make this method public, never call it from another thread.
         //            Will cause weird race condition bugs otherwise.
         
-        ArrayList<Face> copy = new ArrayList<Face>(faces.size());
+        ArrayList<Face> copy = new ArrayList<>(faces.size());
         for (Face f : faces) {
             copy.add(f.clone());
         }

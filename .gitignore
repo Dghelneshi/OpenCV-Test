@@ -8,3 +8,5 @@
 bin/
 doc/
 .metadata/
+.idea/
+*.iml

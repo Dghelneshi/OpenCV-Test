@@ -28,7 +28,7 @@ public class Camera extends VideoCapture {
         }
         else {
             // TODO: what to do? could set boolean and check in face detector, but makes code uglier
-            assert(false) : "DEBUG: Could not get image size from camera";
+            throw new AssertionError("ERROR: Could not get image size from camera");
         }
 
         setFov(hFov, vFov);
@@ -78,7 +78,7 @@ public class Camera extends VideoCapture {
         int numCameras = 0;
         camIndexList.clear();
 
-        ArrayList<Integer> drivers = new ArrayList<Integer>(16);
+        ArrayList<Integer> drivers = new ArrayList<>(16);
         drivers.add(Videoio.CAP_VFW);
         drivers.add(Videoio.CAP_FIREWARE);
         drivers.add(Videoio.CAP_QT);
@@ -114,6 +114,7 @@ public class Camera extends VideoCapture {
                 if (cam.isOpened()) {
                     camIndexList.add(index);
                     numCameras++;
+                    System.out.println("camera at " + index);
                 }
                 cam.release();
             }
