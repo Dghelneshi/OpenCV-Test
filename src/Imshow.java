@@ -37,7 +37,6 @@ public class Imshow implements DebugWindow {
         window = new JFrame();
         image = new ImageIcon();
         label = new JLabel();
-        DebugingWindow dewindow = new DebugingWindow("Debug Window", fd);
         
         label.setIcon(image);
         window.getContentPane().add(label);
@@ -50,11 +49,12 @@ public class Imshow implements DebugWindow {
 
         window.setVisible(true);
         
-        fd.attachDebugWindow(dewindow);
+        fd.attachDebugWindow(this);
     }
 
     public Imshow(String title, FaceDetector fd, int width, int height) {
         this(title, fd);
+        
         hasCustomSize = true;
         this.size = new Size(width, height);
     }
