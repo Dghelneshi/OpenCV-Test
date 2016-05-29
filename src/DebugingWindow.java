@@ -12,11 +12,11 @@ import javax.swing.JTextArea;
 
 import org.opencv.core.Mat;
 
-public class DebugingWindow extends JFrame implements ActionListener, DebugWindow {
+public class DebugingWindow extends JFrame implements DebugWindow, ActionListener  {
 
 	 
-//	FaceDetector fd;
-	FaceDetector fd = new FaceDetector();
+	FaceDetector fd;
+//	FaceDetector fd = new FaceDetector();
 	
 	private double matchTolerance;
 	private int matchRectExpandDivisor;
@@ -53,10 +53,11 @@ public class DebugingWindow extends JFrame implements ActionListener, DebugWindo
 	JButton setVar5 = new JButton("setDetectMinNeighbors");
 	JButton setVar6 = new JButton("setDetectMinFaceSize");
 
-	JButton confirmAllChanges = new JButton("Änderungen Uebernehmen");
+	JButton changeCamara = new JButton("Kamara wechseln");
+//	JButton confirmAllChanges = new JButton("Änderungen Uebernehmen");
 
-	public DebugingWindow(String text) {
-
+	public DebugingWindow(String text, FaceDetector fd) {
+		this.fd = fd;
 		// JPanel hp = new JPanel(new GridLayout(1, 0));
 		// JPanel p = new JPanel(new GridLayout(6, 3));
 
@@ -159,7 +160,8 @@ public class DebugingWindow extends JFrame implements ActionListener, DebugWindo
 		pAll.add(p2);
 		pAll.add(p3);
 		pAll.add(p4);
-		pAll.add(confirmAllChanges);
+//		pAll.add(confirmAllChanges);
+		pAll.add(changeCamara);
 
 		/*
 		 * p.add(getVar1); p.add(showVar1); p.add(setTFVar1); p.add(setVar1);
@@ -186,12 +188,6 @@ public class DebugingWindow extends JFrame implements ActionListener, DebugWindo
 		pack();
 		setVisible(true);
 		setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-
-	}
-	
-	public static void main(String[] args) {
-
-		new DebugingWindow("test");
 
 	}
 
@@ -249,6 +245,10 @@ public class DebugingWindow extends JFrame implements ActionListener, DebugWindo
 			detectMinFaceSize = Integer.parseInt(setTFVar6.getText());
 			fd.setDetectMinFaceSize(detectMinFaceSize);
 
+		}
+		if(btn == changeCamara){
+			fd.cycleCameras();
+//			update("FD_PHASE_WAIT", 1000.f/30, image, faces);
 		}
 
 	}

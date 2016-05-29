@@ -57,7 +57,13 @@ public class FaceDetector implements Runnable {
 
 	// private DebugWindow debugWindow = new DummyDebugWindow();
 
-	private DebugWindow debugWindow = new DummyDebugWindow();
+//	private DebugWindow debugWindow = new DummyDebugWindow();
+	private DebugingWindow debugWindow;// = new DebugingWindow("tet", this);
+/////////////////////////////////////////////////////////
+
+	// private DebugWindow debugWindow = new DummyDebugWindow();
+	
+	//	private DebugWindow debugWindow = new DummyDebugWindow();
 
 	private final ArrayList<Face> faces = new ArrayList<Face>();
 
@@ -362,7 +368,7 @@ public class FaceDetector implements Runnable {
 		activePhase = Phase.FD_PHASE_WAIT;
 
 		debugWindow.update(activePhase, desiredFrameTime, image, makeFaceListCopy());
-
+		
 		long phaseEndTime = System.nanoTime();
 		float totalMillis = deltaMillis(phaseStartTime, phaseEndTime);
 
@@ -572,6 +578,7 @@ public class FaceDetector implements Runnable {
 	 */
 	public void cycleCameras() {
 		requestCameraChange((cameraIndex + 1) % numCameras);
+		System.out.println("Kamara gewechselt zu " + cameraIndex + " und " + numCameras);
 	}
 
 	/**
@@ -651,11 +658,12 @@ public class FaceDetector implements Runnable {
 	 * Attach a new debug window to this class. Replaces the old one. Currently
 	 * does not dispose of the old window.
 	 */
-	public void attachDebugWindow(DebugWindow window) {
-		if (window == null)
+	public void attachDebugWindow(DebugingWindow dewindow) {
+///////////////////////////////////////////////
+		if (dewindow == null)
 			throw new NullPointerException("tried to attach a null debug window");
 
-		this.debugWindow = window;
+		this.debugWindow = dewindow;
 	}
 
 	/**
@@ -663,7 +671,9 @@ public class FaceDetector implements Runnable {
 	 * dispose of the old window.
 	 */
 	public void removeDebugWindow() {
-		debugWindow = new DummyDebugWindow();
+//		debugWindow = new DummyDebugWindow();
+//		debugWindow = new DebugingWindow("remove", this);
+		//////////////////////////////////////////////////////
 	}
 
 	public DebugWindow getDebugWindow() {
@@ -671,7 +681,10 @@ public class FaceDetector implements Runnable {
 	}
 
 	public boolean hasDebugWindow() {
-		return !(debugWindow instanceof DummyDebugWindow);
+//		return !(debugWindow instanceof DummyDebugWindow);
+		return !(debugWindow instanceof DebugingWindow);
+		////////////////////////////////////////////////
+		
 	}
 
 	/**
