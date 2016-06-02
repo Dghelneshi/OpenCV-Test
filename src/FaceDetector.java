@@ -26,7 +26,7 @@ import org.opencv.videoio.Videoio;
  *      e) always track in addition to detect, only remove tracking completely if rect touches image border
  *       \- need to test cases where tracking *should* be lost, maybe decay maximum valid diff over time?
  *       \- possibly too complicated to account for every edge case with this method
- *             
+ *
  *  - maybe detect faces over 2-3 frames, choose only those which are in all frames
  *  - find a method for handling people moving out of camera fov while they are being tracked (re-detect on hitting edge?)
  *  - maybe separate Face datastructure for internal (detection) and external use, copy over relevant data each frame
@@ -43,13 +43,13 @@ import org.opencv.videoio.Videoio;
  *  - fine-tune parameters according to available camera
  *  - try out more classifiers
  *  - look at possibilities for face recognition/biometrics (performance, accuracy, need face database?)
- *  
+ *
  *  --- (C++ Rewrite) ---
  *  - re-examine multi-threading
  *      a) re-get (ROS) every parameter on every loop iteration? probably way too slow
  *      b) override bool. have other thread check parameters, set override if change detected.
  *  - re-examine debug window. we don't really need this interface abstraction stuff anymore since it's just one function
- *  
+ *
  */
 
 public class FaceDetector implements Runnable {
@@ -168,7 +168,7 @@ public class FaceDetector implements Runnable {
             // TODO: maybe put this in constructor?
             camera = new Camera(cameras.get(cameraIndex), 90, 75);
             camera.set(Videoio.CAP_PROP_FRAME_WIDTH, 640);
-            camera.set(Videoio.CAP_PROP_FRAME_HEIGHT, 480);           
+            camera.set(Videoio.CAP_PROP_FRAME_HEIGHT, 480);
         }
         
         Mat image = new Mat();
@@ -184,7 +184,6 @@ public class FaceDetector implements Runnable {
 
             // another thread requested a camera change
             if (requestedCameraIndex >= 0) {
-                
                 this.cameraIndex = requestedCameraIndex;
                 requestedCameraIndex = -1;
                 
@@ -193,7 +192,6 @@ public class FaceDetector implements Runnable {
                     camera.release();
                     camera = new Camera(cameras.get(cameraIndex), 90, 75);
                 }
-                
                 image = new Mat();
                 redetectTimer = 0;
                 activePhase = Phase.FD_PHASE_INIT;
@@ -307,7 +305,7 @@ public class FaceDetector implements Runnable {
             // update the debug window (in the window thread [AWT Event Dispatcher])
             // have to copy everything due to race conditions
             final ArrayList<Face> facesCopy = makeFaceListCopy();
-            final Mat imageCopy = image.clone();
+            final Mat imageCopy = image.clone(); // could skip the copy if we guarantee it won't be modified by update() 
             
             SwingUtilities.invokeLater(() -> debugWindow.update(activePhase, phaseMillis, imageCopy, facesCopy));
             
@@ -338,23 +336,23 @@ public class FaceDetector implements Runnable {
      */
     private void executeWaitPhase(Mat image) {
         long phaseStartTime = System.nanoTime();
-
+        
         activePhase = Phase.FD_PHASE_WAIT;
-
+        
         debugWindow.update(activePhase, desiredFrameTime, image, makeFaceListCopy());
-
+        
         long phaseEndTime = System.nanoTime();
         float totalMillis = deltaMillis(phaseStartTime, phaseEndTime);
-
+        
         sleepUntilNextUpdate(totalMillis);
-
+        
         activePhase = Phase.FD_PHASE_INIT;
     }
 
     /**
      * Sleeps until the next update is due according to {@link #desiredFrameTime}. <br>
      * I.e. it will sleep for approximately {@code desiredFrameTime - totalMillis} milliseconds.
-     *
+     * 
      * @param totalMillis
      *          time spent in this update period so far
      */
@@ -363,7 +361,7 @@ public class FaceDetector implements Runnable {
             float timeRemaining = (desiredFrameTime - totalMillis);
             long sleepMillis = (long) timeRemaining;
             int sleepNanos = (int) (1000000 * (timeRemaining - sleepMillis));
-
+            
             if ((sleepMillis > 0) && (sleepNanos > 0)) {
                 Thread.sleep(sleepMillis, sleepNanos);
             }
@@ -372,7 +370,7 @@ public class FaceDetector implements Runnable {
             System.out.println("DEBUG: Sleep was interrupted!");
         }
     }
-
+    
     /**
      * @param tStart
      *      time value in nanoseconds
