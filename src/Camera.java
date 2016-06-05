@@ -114,7 +114,7 @@ public class Camera extends VideoCapture {
                 if (cam.isOpened()) {
                     camIndexList.add(index);
                     numCameras++;
-                    System.out.println("camera at " + index);
+//                    System.out.println("camera at " + index);
                 }
                 cam.release();
             }

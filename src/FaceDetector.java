@@ -15,28 +15,10 @@ import org.opencv.objdetect.Objdetect;
 import org.opencv.videoio.Videoio;
 
 /* TODO(Dgh):
- *  - get camera fov and image size from ROS Parameter Server, don't start until we have it
- *  - pull out some more parameters with getters/setters
- *  
- *  - try hybrid tracking approach to give reliable IDs to faces (WIP)
- *      a) use detection inside tracked rect + tolerance, then detect new faces *only outside that rect* (problems with overlap for profiles)
- *      b) track first, then detect, then try to match detected faces to tracked faces (how to handle each possible case?)
- *      c) combine a+b, use tracking as strong hint for detection (change detect parameters for tracked area to be more lenient)      
- *      d) detect first, then match with last known faces (center position and/or template match)
- *      e) always track in addition to detect, only remove tracking completely if rect touches image border
- *       \- need to test cases where tracking *should* be lost, maybe decay maximum valid diff over time?
- *       \- possibly too complicated to account for every edge case with this method
- *
- *  - maybe detect faces over 2-3 frames, choose only those which are in all frames
- *  - find a method for handling people moving out of camera fov while they are being tracked (re-detect on hitting edge?)
  *  - maybe separate Face datastructure for internal (detection) and external use, copy over relevant data each frame
  *   \- check every data type. do we really need doubles?
- *  - more perf statistics in debug window
  *  - check program behavior with different threads ending in different orders is fine (e.g. FD thread stops before window is closed)
  *   \- window listeners may need to be removed?
- *  - maybe determine tracking roi size using distance estimation + max angular velocity 
- *  - maybe provide a 3D velocity vector for faces across some time span (500ms?), handle Z-axis via size changes (math!)
- *   \- time span needs to be at least as long as tracking phase for Z-axis to work! (synchronize?)
  *  - use messages from the main part of the project as signals to start/stop threads or open a debug window
  *  - test what happens in hard error cases like disconnecting a camera mid operation
  *  - (later) maybe add passive "preview" phase that doesn't broadcast faces?
@@ -49,6 +31,7 @@ import org.opencv.videoio.Videoio;
  *      a) re-get (ROS) every parameter on every loop iteration? probably way too slow
  *      b) override bool. have other thread check parameters, set override if change detected.
  *  - re-examine debug window. we don't really need this interface abstraction stuff anymore since it's just one function
+ *  - get camera fov and image size from ROS Parameter Server, don't start until we have it
  *
  */
 
@@ -97,13 +80,14 @@ public class FaceDetector implements Runnable {
      * Recommended values are from 0.05 to 0.2
      */
     private double matchTolerance = 0.1;
-    
+
     /**
-     * This influences the size of the rectangle to search for a matching face betwen two frames.<br>
-     * Smaller value is slower, but allows for larger movement between frames. May cause strange behavior if too small.<br>
-     * Recommended values are from 32 to 8
+     * When matching faces between two frames, the program will search for the face inside a scaled version of its
+     * rectangle. This sets the scale factor.<br>
+     * Larger value is slower, but allows for more movement between frames (should be adjusted to frame rate).<br>
+     * Recommended values are between 1.5 and 2.5
      */
-    private int matchRectExpandDivisor = 18; // TODO: This variable name is too long and confusing!
+    private float matchRectScaleFactor = 2.0f;
     
     /**
      * Specifies how long the tracking/matching phase should last before redetecting faces "properly" (in milliseconds).<br>
@@ -115,7 +99,7 @@ public class FaceDetector implements Runnable {
     
     /**
      * Specifies how much the image is scaled in each stage of face detection.<br>
-     * Smaller value is more accurate, but slower. <b>Must be greater than 1.0</b> <br>
+     * Smaller value is more accurate, but much slower. <b>Must be greater than 1.0</b> <br>
      * Recommended values are between 1.05 and 1.6
      */
     private double detectScaleFactor = 1.1;
@@ -134,8 +118,15 @@ public class FaceDetector implements Runnable {
      * Recommended values are between 5% and 25% of the frame height (depending on camera fov).
      */
     private int detectMinFaceSize = 32;
-    
-    
+
+    /**
+     * Specifies the maximum distance of two faces to be considered the same. This is for the redetection phase only and
+     * the sematics are different from the {@link #matchTolerance} parameter! <br>
+     * Smaller value is more accurate, but may cause the program to change face IDs with fast head movements. Larger values
+     * may result in different people "exchanging" face IDs.<br>
+     * Recommended values are from 0.05 to 0.2
+     */
+    private double redetectMatchTolerance = 0.1; // TODO: make this more like a scale factor dependent on face size?
     
     //////////////////////////////
     // END DETECTION PARAMETERS //
@@ -207,7 +198,7 @@ public class FaceDetector implements Runnable {
                 executeWaitPhase(image);
                 continue;
             }
-            
+
             ////////////////////
             // FACE DETECTION //
             ////////////////////
@@ -244,48 +235,53 @@ public class FaceDetector implements Runnable {
                 }
             } break;
             
-            
-            // TODO:
-            // current method compares center point of faces
-            // another method would compare faces directly and match them immediately
-            // maybe don't retain faces if we get too close to image border
+
             case FD_PHASE_REDETECT: {
-                
+
+                // temporary lists for old and newly detected faces
                 ArrayList<Face> oldFaces = makeFaceListCopy();
+                ArrayList<Face> newFaces = new ArrayList<>();
                 
-                faces.clear();
+                faces.clear(); // we will refill the list one-by-one
                 
-                detectFaces(grayImage, faces, faceCascade, detectMinFaceSize); // detect new faces
+                detectFaces(grayImage, newFaces, faceCascade, detectMinFaceSize); // detect new faces
                 
-                trackFaces(grayImage, oldFaces); // try to find new positions for old faces
-                
-                // we're integrating over a fairly long period of time, so tolerance is large
-                // BUT: can lead to faces "transferring" to another person
-                double tolerance = 0.1; // TODO: make parameter
-                
-                // compare new positions of old faces and all detected faces. merge those that match within tolerance.
+                // compare new positions of old faces and all detected faces. merge those that match within tolerance
+                // position matching is obviously not very robust, but by far the easiest to implement and test
                 for (Face oldFace : oldFaces) {
-                    
-                    boolean found = false;
-                    for (Face newFace : faces) {
-                        
-                        if (Math.abs(oldFace.center.x - newFace.center.x) < tolerance &&
-                            Math.abs(oldFace.center.y - newFace.center.y) < tolerance) {
-                            
-                            newFace.faceID = oldFace.faceID;
-                            newFace.retainedCount = 0;
-                            found = true;
-                            break;
+
+                    double closestMatchDistance = Double.POSITIVE_INFINITY;
+                    Face matchedFace = null;
+
+                    for (Face newFace : newFaces) {
+
+                        double deltaX = Math.abs(oldFace.center.x - newFace.center.x);
+                        double deltaY = Math.abs(oldFace.center.y - newFace.center.y);
+
+                        double distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+                        // TODO: make this more like a scale factor dependent on face size?
+                        if ((distance < redetectMatchTolerance) && (distance < closestMatchDistance)) {
+
+                            closestMatchDistance = distance;
+                            matchedFace = newFace;
                         }
                     }
-                    
-                    // we couldn't match the old face to a new one. retain it once, in case it reappears next cycle.
-                    if (!found && oldFace.retainedCount < 1) { // TODO: make parameter?
+
+                    if (matchedFace != null) {
+                        matchedFace.faceID = oldFace.faceID;
+
+                        // move face from temporary to permanent list
+                        newFaces.remove(matchedFace);
+                        faces.add(matchedFace);
+                    } else if (oldFace.retainedCount < 1) {
+                        // no match, but retain old face once, in case it "reappears" next cycle
                         oldFace.retainedCount++;
                         faces.add(oldFace);
                     }
                 }
-                
+                faces.addAll(newFaces); // add all new faces we couldn't match to an old one
+
                 nextPhase = Phase.FD_PHASE_TRACK;
             } break;
             
@@ -301,24 +297,25 @@ public class FaceDetector implements Runnable {
             ////////////////////////
             // END FACE DETECTION //
             ////////////////////////
-            
+
             // update the debug window (in the window thread [AWT Event Dispatcher])
             // have to copy everything due to race conditions
             final ArrayList<Face> facesCopy = makeFaceListCopy();
-            final Mat imageCopy = image.clone(); // could skip the copy if we guarantee it won't be modified by update() 
+            final Mat imageCopy = image.clone(); // could skip the copy if we guarantee it won't be modified by update()
+            final Phase phaseCopy = activePhase;
             
-            SwingUtilities.invokeLater(() -> debugWindow.update(activePhase, phaseMillis, imageCopy, facesCopy));
+            SwingUtilities.invokeLater(() -> debugWindow.update(phaseCopy, phaseMillis, imageCopy, facesCopy));
             
             // measure total busy time spent
             long endTime = System.nanoTime();
             float totalMillis = deltaMillis(startTime, endTime);
 
             // debug perf statistics (we could show these in debug window instead)
-            System.out.println("---" + activePhase);
-            System.out.printf("read time:    %6.2f\n", deltaMillis(startTime, phaseStartTime)); // includes some waiting inside opencv api
-            System.out.printf("phase time:   %6.2f\n", phaseMillis);
-            System.out.printf("update time:  %6.2f\n", deltaMillis(phaseEndTime, endTime));
-            System.out.printf("time left:    %6.2f\n", (desiredFrameTime - totalMillis));
+//            System.out.println("---" + activePhase);
+//            System.out.printf("read time:    %6.2f\n", deltaMillis(startTime, phaseStartTime)); // includes some waiting inside opencv api
+//            System.out.printf("phase time:   %6.2f\n", phaseMillis);
+//            System.out.printf("update time:  %6.2f\n", deltaMillis(phaseEndTime, endTime));
+//            System.out.printf("time left:    %6.2f\n", (desiredFrameTime - totalMillis));
             
             // update at desired framerate
             sleepUntilNextUpdate(totalMillis);
@@ -338,8 +335,8 @@ public class FaceDetector implements Runnable {
         long phaseStartTime = System.nanoTime();
         
         activePhase = Phase.FD_PHASE_WAIT;
-        
-        debugWindow.update(activePhase, desiredFrameTime, image, makeFaceListCopy());
+
+        SwingUtilities.invokeLater(() -> debugWindow.update(activePhase, desiredFrameTime, image, makeFaceListCopy()));
         
         long phaseEndTime = System.nanoTime();
         float totalMillis = deltaMillis(phaseStartTime, phaseEndTime);
@@ -370,7 +367,8 @@ public class FaceDetector implements Runnable {
             System.out.println("DEBUG: Sleep was interrupted!");
         }
     }
-    
+
+
     /**
      * @param tStart
      *      time value in nanoseconds
@@ -393,9 +391,6 @@ public class FaceDetector implements Runnable {
      *            the face list
      */
     private void trackFaces(Mat grayImage, List<Face> faceList) {
-       
-        // each face rect will be expanded by this amount of pixels in each direction
-        int rectExpand = grayImage.width() / matchRectExpandDivisor;
 
         for (int i = 0; i < faceList.size(); i++) {
 
@@ -403,6 +398,8 @@ public class FaceDetector implements Runnable {
 
             // make a slightly larger rect than the face (region of interest)
             Rect roi = f.faceRect.clone();
+            int rectExpand = (int) (roi.width * (matchRectScaleFactor - 1.0f));
+
             roi.x = Math.max(roi.x - rectExpand, 0);
             roi.y = Math.max(roi.y - rectExpand, 0);
             roi.width  = Math.min(roi.width  + rectExpand * 2, grayImage.width()  - roi.x);
@@ -416,7 +413,7 @@ public class FaceDetector implements Runnable {
             // get best match location
             MinMaxLocResult minMax = Core.minMaxLoc(matchMatrix);
 
-            // likely match (use minVal for TM_SQDIFF_NORMED, maxVal > (1.0 - matchTolerance) for other methods)
+            // likely match [use minVal for TM_SQDIFF_NORMED, maxVal > (1.0 - matchTolerance) for other methods]
             if (minMax.minVal <= matchTolerance) {
 
                 // update face in list with new values
@@ -433,11 +430,6 @@ public class FaceDetector implements Runnable {
             else {
                 // not matched, but retain old face for now, in case we can find it again
                 f.retainedCount++;
-                
-                // TODO: we could remove the face after a certain count to help prevent possible transferring of faces
-                
-//                faceList.remove(i);
-//                i--;
             }
         }
     }
@@ -688,25 +680,23 @@ public class FaceDetector implements Runnable {
     }
 
     /**
-     * This influences the size of the rectangle to search for a matching face betwen two frames.<br>
-     * Smaller value is slower, but allows for larger movement between frames. May cause strange behavior if too small.<br>
-     * Recommended values are from 32 to 8
+     * @see #matchRectScaleFactor
      * 
      * @throws IllegalArgumentException
-     *             if {@code matchRectExpandDivisor} is less than 1
+     *             if {@code matchRectScaleFactor} is less than 1
      */
-    public void setMatchRectExpandDivisor(int matchRectExpandDivisor) {
-        if (matchRectExpandDivisor < 1)
-            throw new IllegalArgumentException("matchRectExpandDivisor must be greater than 0!");
+    public void setMatchRectScaleFactor(float matchRectScaleFactor) {
+        if (matchRectScaleFactor <= 1.0f)
+            throw new IllegalArgumentException("matchRectScaleFactor must be greater than 1!");
         
-        this.matchRectExpandDivisor = matchRectExpandDivisor;
+        this.matchRectScaleFactor = matchRectScaleFactor;
     }
 
     /**
-     * @see #setMatchRectExpandDivisor(int)
+     * @see #setMatchRectScaleFactor(float)
      */
-    public int getMatchRectExpandDivisor() {
-        return matchRectExpandDivisor;
+    public float getMatchRectScaleFactor() {
+        return matchRectScaleFactor;
     }
 
 
@@ -748,5 +738,13 @@ public class FaceDetector implements Runnable {
      */
     public int getMaxTrackingDuration() {
         return maxTrackingDuration;
+    }
+
+    public double getRedetectMatchTolerance() {
+        return redetectMatchTolerance;
+    }
+
+    public void setRedetectMatchTolerance(double redetectMatchTolerance) {
+        this.redetectMatchTolerance = redetectMatchTolerance;
     }
 }

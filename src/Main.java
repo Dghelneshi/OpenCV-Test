@@ -10,7 +10,7 @@ public class Main {
         new Thread(fd, "Face Detector Thread").start();
 
         //DebugWindow window = new Imshow("Debug Window", fd);
-        DebugWindow window = new DebugingWindow("Debug Window", fd);
+        DebugWindow window = new FullDebugWindow("Debug Window", fd);
     }
 
 }
